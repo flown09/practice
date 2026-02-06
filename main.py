@@ -157,7 +157,7 @@ async def manual_report(background_tasks: BackgroundTasks):
 async def download_report():
     """Скачать готовый отчет"""
     if not os.path.exists(settings.excel_path):
-        raise HTTPException(404, "❌ Отчет не готов. Запустите выгрузку!")
+        raise HTTPException(404, "Отчет не готов. Запустите выгрузку!")
     return FileResponse(
         settings.excel_path,
         filename="миац_отчет.xlsx",
