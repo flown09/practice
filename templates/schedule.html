@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MIAC Автовыгрузка</title>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial; max-width: 800px; margin: 50px auto; padding: 20px; }
+        .card { border: 1px solid #ddd; padding: 20px; margin: 20px 0; border-radius: 8px; }
+        button { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        .success { background: #d4edda; color: #155724; padding: 10px; border-radius: 5px; }
+        select, input { padding: 8px; margin: 5px; border: 1px solid #ddd; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <h1>MIAC Автовыгрузка талонов</h1>
+
+    <div class="card">
+        <h3>Расписание</h3>
+        <form id="scheduleForm">
+            <label>Включить автозапуск:</label>
+            <input type="checkbox" id="enabled" {{ 'checked' if config.enabled }}>
+
+            <br><br>
+            <label>День недели:</label>
+            <select id="day">
+                <option value="0" {{ 'selected' if config.day_of_week == 0 }}>Понедельник</option>
+                <option value="1" {{ 'selected' if config.day_of_week == 1 }}>Вторник</option>
+                <option value="2" {{ 'selected' if config.day_of_week == 2 }}>Среда</option>
+                <option value="3" {{ 'selected' if config.day_of_week == 3 }}>Четверг</option>
+                <option value="4" {{ 'selected' if config.day_of_week == 4 }}>Пятница</option>
+                <option value="5" {{ 'selected' if config.day_of_week == 5 }}>Суббота</option>
+                <option value="6" {{ 'selected' if config.day_of_week == 6 }}>Воскресенье</option>
+            </select>
+
+            <br><br>
+            <label>Время:</label>
+            <input type="number" id="hour" min="0" max="23" value="{{ config.hour }}">:
+            <input type="number" id="minute" min="0" max="59" value="{{ config.minute }}" style="width:50px">
+
+            <br><br>
+            <button type="submit">Сохранить расписание</button>
+        </form>
+        <div id="status"></div>
+    </div>
+
+    <div class="card">
+        <h3>Ручной запуск</h3>
+        <a href="/manual"><button>Запустить выгрузку СЕЙЧАС</button></a>
+        <a href="/download"><button>Скачать последний отчет</button></a>
+    </div>
+
+    <div class="card">
+        <h3>Статус</h3>
+        <div id="status-info">Загрузка...</div>
+    </div>
+
+    <script>
+        // Сохранение расписания
+        document.getElementById('scheduleForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData();
+            formData.append('enabled', document.getElementById('enabled').checked);
+            formData.append('day', document.getElementById('day').value);
+            formData.append('hour', document.getElementById('hour').value);
+            formData.append('minute', document.getElementById('minute').value);
+
+            const resp = await fetch('/schedule', {method: 'POST', body: formData});
+            const data = await resp.json();
+            document.getElementById('status').innerHTML = `<div class="success">${data.message}</div>`;
+        }
+
+        // Загрузка статуса
+        async function loadStatus() {
+            const resp = await fetch('/status');
+            const data = await resp.json();
+            document.getElementById('status-info').innerHTML = `
+                Автозапуск: ${data.enabled ? 'Включен' : 'Выключен'}<br>
+                Задач в очереди: ${data.jobs_count}<br>
+                Последний файл: ${data.last_excel} байт
+            `;
+        }
+        loadStatus();
+        setInterval(loadStatus, 5000);
+    </script>
+</body>
+</html>
