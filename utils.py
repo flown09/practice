@@ -21,7 +21,7 @@ def get_last_week_dates():
         "%d.%m.%Y")
 
 
-def process_lpu(lpu_df: pd.DataFrame, ws, wb):
+def process_lpu(lpu_df: pd.DataFrame, ws, wb, cancel_lpu: pd.DataFrame = None):
     BASE_URL = settings.base_url
     LOGIN = settings.login
     PASSWORD = settings.password
@@ -161,8 +161,13 @@ def process_lpu(lpu_df: pd.DataFrame, ws, wb):
         try:
             resp_data = session.post(url_multidata, params=params_multidata, data=data_multidata)
             resp_data.raise_for_status()
-            df = pd.read_xml(
-                resp_data.text.replace('<DataSet name="DS_TALONS" sysid="0">', "").replace('</DataSet>', ""))
+
+            import io
+            xml_clean = resp_data.text.replace('<DataSet name="DS_TALONS" sysid="0">', "").replace('</DataSet>', "")
+            df = pd.read_xml(io.StringIO(xml_clean))
+
+            print(f"[DEBUG] DataFrame shape: {df.shape}")
+            print(f"[DEBUG] Columns: {df.columns.tolist()}")
 
             for k in range(3, 94):
                 if lpu_df["РМИС ID"][i] == ws[f'B{k}'].value:
@@ -178,29 +183,36 @@ def process_lpu(lpu_df: pd.DataFrame, ws, wb):
 
         except Exception as e:
             print(f"[ERROR] Ошибка для LPU {lpu_df['РМИС ID'][i]}: {e}")
-            if cancelLPU.empty:
-                cancelLPU = pd.DataFrame()
+            if cancel_lpu is None:
+                cancel_lpu = pd.DataFrame()
+
             new_row = pd.DataFrame({
                 "Наменование МО": [lpu_df["Наменование МО"][i]],
                 "РМИС ID": [lpu_df["РМИС ID"][i]]
             })
+            global cancelLPU
             cancelLPU = pd.concat([cancelLPU, new_row], ignore_index=True)
 
 
 def main_process():
+    global cancelLPU
+
     LPU = pd.read_excel(settings.lpu_path)
-    wb = load_workbook(settings.excel_path)
-    ws = wb["Лист 1"]
+    wb_obj = load_workbook(settings.excel_path)
+    ws = wb_obj["Лист 1"]
 
     start_time = time.time()
 
+
     if not cancelLPU.empty:
         print("[INFO] Обработка неудачных LPU...")
-        process_lpu(cancelLPU.drop_duplicates(), ws, wb)
+        process_lpu(cancelLPU.drop_duplicates(), ws, wb_obj, cancelLPU)
+
 
     print("[INFO] Основная обработка...")
-    process_lpu(LPU, ws, wb)
+    process_lpu(LPU, ws, wb_obj, cancelLPU)
 
+    wb_obj.save(settings.excel_path)
     duration = time.time() - start_time
     print(f"[INFO] Обработка завершена за {duration:.2f} сек")
     return duration
