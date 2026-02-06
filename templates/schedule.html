@@ -76,8 +76,9 @@
             const data = await resp.json();
             document.getElementById('status-info').innerHTML = `
                 Автозапуск: ${data.enabled ? 'Включен' : 'Выключен'}<br>
+                Следующий запуск: ${data.next_run}<br>
                 Задач в очереди: ${data.jobs_count}<br>
-                Последний файл: ${data.last_excel} байт
+                Файл отчета: ${data.file_size} байт, ${data.file_date}
             `;
         }
         loadStatus();
