@@ -10,44 +10,86 @@
         button:hover { background: #0056b3; }
         .success { background: #d4edda; color: #155724; padding: 10px; border-radius: 5px; }
         select, input { padding: 8px; margin: 5px; border: 1px solid #ddd; border-radius: 4px; }
+
+        /* Стили для сворачиваемого блока - ИСПРАВЛЕНО */
+        .collapsible-header {
+            cursor: pointer;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            margin: -20px -20px 0 -20px; /* Убран нижний отступ (было 20px) */
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: bold;
+        }
+        .collapsible-content {
+            max-height: 1000px;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out, padding 0.3s ease-out; /* Добавлен переход для padding */
+            padding-top: 20px; /* Добавлен отступ сверху для контента */
+        }
+        .collapsible-content.collapsed {
+            max-height: 0;
+            padding: 0 !important; /* Полностью убираем отступы при сворачивании */
+        }
+        .toggle-icon {
+            font-size: 18px;
+            transition: transform 0.3s;
+        }
+        .toggle-icon.rotated {
+            transform: rotate(90deg);
+        }
+
+        /* Уменьшение отступа у заголовков в карточках */
+        .card h3 {
+            margin-top: 0; /* Минимальный верхний отступ */
+            margin-bottom: 12px;
+        }
     </style>
 </head>
 <body>
     <h1>MIAC Автовыгрузка талонов</h1>
 
+    <!-- Блок расписания (сворачиваемый) -->
     <div class="card">
-        <h3>Расписание</h3>
-        <form id="scheduleForm">
-            <label>Включить автозапуск:</label>
-            <input type="checkbox" id="enabled" {{ 'checked' if config.enabled }}>
+        <div class="collapsible-header" onclick="toggleCollapse('schedule-content')">
+            <span>Расписание</span>
+            <span class="toggle-icon" id="schedule-icon">▼</span>
+        </div>
+        <div class="collapsible-content" id="schedule-content">
+            <form id="scheduleForm">
+                <label>Включить автозапуск:</label>
+                <input type="checkbox" id="enabled" {{ 'checked' if config.enabled }}>
 
-            <br><br>
-            <label>День недели:</label>
-            <select id="day">
-                <option value="0" {{ 'selected' if config.day_of_week == 0 }}>Понедельник</option>
-                <option value="1" {{ 'selected' if config.day_of_week == 1 }}>Вторник</option>
-                <option value="2" {{ 'selected' if config.day_of_week == 2 }}>Среда</option>
-                <option value="3" {{ 'selected' if config.day_of_week == 3 }}>Четверг</option>
-                <option value="4" {{ 'selected' if config.day_of_week == 4 }}>Пятница</option>
-                <option value="5" {{ 'selected' if config.day_of_week == 5 }}>Суббота</option>
-                <option value="6" {{ 'selected' if config.day_of_week == 6 }}>Воскресенье</option>
-            </select>
+                <br><br>
+                <label>День недели:</label>
+                <select id="day">
+                    <option value="0" {{ 'selected' if config.day_of_week == 0 }}>Понедельник</option>
+                    <option value="1" {{ 'selected' if config.day_of_week == 1 }}>Вторник</option>
+                    <option value="2" {{ 'selected' if config.day_of_week == 2 }}>Среда</option>
+                    <option value="3" {{ 'selected' if config.day_of_week == 3 }}>Четверг</option>
+                    <option value="4" {{ 'selected' if config.day_of_week == 4 }}>Пятница</option>
+                    <option value="5" {{ 'selected' if config.day_of_week == 5 }}>Суббота</option>
+                    <option value="6" {{ 'selected' if config.day_of_week == 6 }}>Воскресенье</option>
+                </select>
 
-            <br><br>
-            <label>Время:</label>
-            <input type="number" id="hour" min="0" max="23" value="{{ config.hour }}">:
-            <input type="number" id="minute" min="0" max="59" value="{{ config.minute }}" style="width:50px">
+                <br><br>
+                <label>Время:</label>
+                <input type="number" id="hour" min="0" max="23" value="{{ config.hour }}">:
+                <input type="number" id="minute" min="0" max="59" value="{{ config.minute }}" style="width:50px">
 
-            <br><br>
-            <button type="submit">Сохранить расписание</button>
-        </form>
-        <div id="status"></div>
+                <br><br>
+                <button type="submit">Сохранить расписание</button>
+            </form>
+            <div id="status"></div>
+        </div>
     </div>
 
     <div class="card">
         <h3>Ручной запуск</h3>
         <a href="/manual"><button>Запустить выгрузку СЕЙЧАС</button></a>
-        <a href="/download"><button>Скачать последний отчет</button></a>
+        <a href="/download-report"><button>Скачать последний отчет</button></a>
     </div>
 
     <div class="card">
@@ -56,6 +98,15 @@
     </div>
 
     <script>
+        // Функция сворачивания/разворачивания
+        function toggleCollapse(contentId) {
+            const content = document.getElementById(contentId);
+            const icon = document.getElementById('schedule-icon'); // Исправлен ID иконки
+
+            content.classList.toggle('collapsed');
+            icon.classList.toggle('rotated');
+        }
+
         // Сохранение расписания
         document.getElementById('scheduleForm').onsubmit = async (e) => {
             e.preventDefault();
@@ -76,6 +127,7 @@
             const data = await resp.json();
             document.getElementById('status-info').innerHTML = `
                 Автозапуск: ${data.enabled ? 'Включен' : 'Выключен'}<br>
+                Планировщик: ${data.scheduler_running ? 'Работает' : 'Остановлен'}<br>
                 Следующий запуск: ${data.next_run}<br>
                 Задач в очереди: ${data.jobs_count}<br>
                 Файл отчета: ${data.file_size} байт, ${data.file_date}
