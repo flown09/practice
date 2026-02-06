@@ -80,7 +80,10 @@
                 <input type="number" id="minute" min="0" max="59" value="{{ config.minute }}" style="width:50px">
 
                 <br><br>
-                <button type="submit">Сохранить расписание</button>
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" style="flex: 1;">Сохранить расписание</button>
+                    <button type="button" id="clearSchedule" style="background: #dc3545; flex: 1;">Удалить расписание</button>
+                </div>
             </form>
             <div id="status"></div>
         </div>
@@ -135,6 +138,23 @@
         }
         loadStatus();
         setInterval(loadStatus, 5000);
+
+        document.getElementById('clearSchedule').onclick = async () => {
+            if (!confirm('Удалить расписание? Автозапуск будет отключен.')) return;
+
+            const formData = new FormData();
+            formData.append('enabled', false);
+            formData.append('day', 0);
+            formData.append('hour', 10);
+            formData.append('minute', 0);
+
+            const resp = await fetch('/schedule', {method: 'POST', body: formData});
+            const data = await resp.json();
+            document.getElementById('status').innerHTML = `<div style="background: #f8d7da; color: #721c24; padding: 10px; border-radius: 5px;">${data.message}</div>`;
+
+            // Обновляем форму
+            document.getElementById('enabled').checked = false;
+        }
     </script>
 </body>
 </html>
