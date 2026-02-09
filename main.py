@@ -9,6 +9,9 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from utils import main_process, get_last_week_dates
 from config import settings
+import zipfile
+import io
+from fastapi.responses import StreamingResponse
 
 app = FastAPI(title="MIAC Report Service")
 templates = Jinja2Templates(directory="templates")
@@ -22,6 +25,35 @@ schedule_config = {
 }
 
 scheduler = None  # Глобальная переменная для текущего планировщика
+
+
+@app.get("/install-extension")
+async def install_extension():
+    """Скачивает готовый .crx файл расширения"""
+
+    # Создаем ZIP в памяти
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        # Добавляем все файлы расширения
+        zip_file.write("static/extension/manifest.json", "manifest.json")
+        zip_file.write("static/extension/script-loader.js", "script-loader.js")
+        zip_file.write("static/extension/sd.js", "sd.js")
+        # Иконки (если есть)
+        if os.path.exists("static/extension/img/icon16.png"):
+            zip_file.write("static/extension/img/icon16.png", "img/icon16.png")
+            zip_file.write("static/extension/img/icon48.png", "img/icon48.png")
+            zip_file.write("static/extension/img/icon128.png", "img/icon128.png")
+        # ... остальные иконки
+
+    zip_buffer.seek(0)
+
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": "attachment; filename=miac-dashboard-extension.zip"
+        }
+    )
 
 def create_scheduler():
     """Создает и возвращает новый чистый планировщик"""
