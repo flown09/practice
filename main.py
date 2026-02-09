@@ -16,7 +16,6 @@ from fastapi.responses import StreamingResponse
 app = FastAPI(title="MIAC Report Service")
 templates = Jinja2Templates(directory="templates")
 
-# Убираем глобальный scheduler, делаем его локальным
 schedule_config = {
     "enabled": False,
     "day_of_week": 0,
@@ -24,26 +23,22 @@ schedule_config = {
     "minute": 0
 }
 
-scheduler = None  # Глобальная переменная для текущего планировщика
+scheduler = None
 
 
 @app.get("/install-extension")
 async def install_extension():
     """Скачивает готовый .crx файл расширения"""
 
-    # Создаем ZIP в памяти
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-        # Добавляем все файлы расширения
         zip_file.write("static/extension/manifest.json", "manifest.json")
         zip_file.write("static/extension/script-loader.js", "script-loader.js")
         zip_file.write("static/extension/sd.js", "sd.js")
-        # Иконки (если есть)
         if os.path.exists("static/extension/img/icon16.png"):
             zip_file.write("static/extension/img/icon16.png", "img/icon16.png")
             zip_file.write("static/extension/img/icon48.png", "img/icon48.png")
             zip_file.write("static/extension/img/icon128.png", "img/icon128.png")
-        # ... остальные иконки
 
     zip_buffer.seek(0)
 
@@ -104,13 +99,11 @@ async def set_schedule(
     """Установка расписания"""
     global scheduler, schedule_config
 
-    # Полностью останавливаем старый планировщик
     if scheduler is not None:
         if scheduler.running:
             scheduler.shutdown(wait=True)  # Ждем завершения
         scheduler = None
 
-    # Обновляем конфигурацию
     schedule_config.update({
         "enabled": enabled,
         "day_of_week": day,
@@ -121,7 +114,6 @@ async def set_schedule(
     day_names = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье']
 
     if enabled:
-        # Создаем НОВЫЙ планировщик
         scheduler = create_scheduler()
         day_names_cron = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
         trigger = CronTrigger(
