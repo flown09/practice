@@ -182,83 +182,17 @@ function replaceAll(string, search, replace) {
   return string.split(search).join(replace);
 }
 
-function getLastWeekDates() {
-    const now = new Date();
-    const lastWeekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    lastWeekStart.setDate(lastWeekStart.getDate() - lastWeekStart.getDay() + 1);
-    const lastWeekEnd = new Date(lastWeekStart);
-    lastWeekEnd.setDate(lastWeekStart.getDate() + 6);
+window.onload = function() {
+	var t = 5000;
 
-    const fmt = (d) => d.toISOString().slice(0, 10);
-    return [fmt(lastWeekStart), fmt(lastWeekEnd)];
-}
+	var container = document.createElement("div");
+	container.innerText = "АВТО";
+	container.className = "rb-filter-cancel-button button";
 
-async function autoRun() {
-    const [dStart, dStop] = getLastWeekDates();
-    console.log(`Auto-running for ${dStart} to ${dStop}`);
+	for (var i = 0; i < 100; i++) {
+		setTimeout(checkLoad, t, container);
+		t += 500;
+	}
 
-    const token = JSON.parse(sessionStorage.getItem('oidc.user:/idsrv:DashboardsApp'))?.access_token;
-    if (!token) return console.error('No auth token');
-
-    options.headers.Authorization = 'Bearer ' + token;
-    options.body = replaceAll(replaceAll(_ORG_, 'DSTART', dStart), 'DSTOP', dStop);
-
-    try {
-        const orgResult = await fetch(url[0], options).then(r => r.json());
-        const orgs = orgResult.result?.dataFrame?.rows?.map(row => row[0]) || [];
-        if (!orgs.length) return console.error('No orgs found');
-
-        console.log(`Processing ${orgs.length} orgs...`);
-        const results = [];
-
-        for (let i = 0; i < orgs.length; i++) {
-            document.getElementsByTagName('iframe')[0].contentWindow.document
-                ?.getElementsByClassName("va-widget-body-container")[21]?.getElementsByTagName("div")[1]
-                .innerText = `ПРОГРЕСС: ${i+1}/${orgs.length}`;
-
-            const orgName = replaceAll(orgs[i], '"', '\\"');
-            let success = false;
-            for (let retry = 0; retry < 10; retry++) {
-                const reqs = await getReq(orgName, dStart, dStop);
-                const responses = await Promise.all(reqs);
-
-                const row = [orgs[i]];
-                let allGood = true;
-                for (let w = 0; w < responses.length; w++) {
-                    if (responses[w].hasError) {
-                        if (retry === 9) row.push([BODYS[w][1], responses[w].errorMessage]);
-                        allGood = false;
-                        break;
-                    } else {
-                        row.push([BODYS[w][1], responses[w].result.dataFrame.values[0]]);
-                    }
-                }
-                if (allGood) {
-                    success = true;
-                    results.push(row);
-                    break;
-                }
-            }
-            if (!success) results.push([orgs[i], ['ERROR', 'Retries exhausted']]);
-        }
-
-        writeFile('miac_scrape_last_week.json', JSON.stringify(results, null, 2));
-        alert(`Готово! Скачан файл для ${orgs.length} оргов (${dStart}–${dStop})`);
-    } catch (e) {
-        console.error('Auto-run failed:', e);
-        alert('Ошибка: ' + e.message);
-    }
-}
-
-window.onload = () => {
-    console.log('MIAC Auto-Extension loaded');
-    setTimeout(() => {
-        const iframe = document.getElementsByTagName('iframe')[0];
-        if (iframe?.contentWindow && sessionStorage.getItem('oidc.user:/idsrv:DashboardsApp')) {
-            autoRun();
-        } else {
-            console.error('Iframe or auth not ready');
-            setTimeout(autoRun, 10000);
-        }
-    }, 15000);
+	setTimeout(addB, 20000, container);
 };
