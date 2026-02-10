@@ -72,16 +72,15 @@ async function getReq(o, dStart, dStop) {
 	return req;
 }
 
-function addB (container) {
-	// let container = document.createElement("div");
-	// container.innerText = "АВТО";
-	// container.className = "rb-filter-cancel-button button";
-	
-	// document.getElementsByTagName('iframe')[0].contentWindow.document.getElementsByClassName("rb-actions-buttons-container")[1].append(container);
-	
-	// alert("Готово, кнопка добавлена");
-	
-	container.addEventListener('click', function() {
+var autoExportStarted = false;
+
+function startAutoExport() {
+	if (autoExportStarted) {
+		return;
+	}
+
+	autoExportStarted = true;
+
 		var token = JSON.parse(sessionStorage.getItem('oidc.user:/idsrv:DashboardsApp'))["access_token"];
 		var org = [];
 		
@@ -165,8 +164,7 @@ function addB (container) {
 				alert("Работа завершена");
 			}
 		  }
-	  })();
-	}, false);
+		  })();
 }
 
 function checkLoad(container) {
@@ -182,17 +180,35 @@ function replaceAll(string, search, replace) {
   return string.split(search).join(replace);
 }
 
-window.onload = function() {
-	var t = 5000;
-
-	var container = document.createElement("div");
-	container.innerText = "АВТО";
-	container.className = "rb-filter-cancel-button button";
-
-	for (var i = 0; i < 100; i++) {
-		setTimeout(checkLoad, t, container);
-		t += 500;
+function isDashboardReady() {
+	var auth = sessionStorage.getItem('oidc.user:/idsrv:DashboardsApp');
+	if (!auth) {
+		return false;
 	}
 
-	setTimeout(addB, 20000, container);
+	var iframe = document.getElementsByTagName('iframe')[0];
+	if (!iframe || !iframe.contentWindow || !iframe.contentWindow.document) {
+		return false;
+	}
+
+	return iframe.contentWindow.document.getElementsByClassName("datepicker-here va-date-filter")[0] != undefined;
+}
+
+window.onload = function() {
+	var attempts = 0;
+	var maxAttempts = 120;
+	var timer = setInterval(function() {
+		attempts += 1;
+
+		if (isDashboardReady()) {
+			clearInterval(timer);
+			startAutoExport();
+			return;
+		}
+
+		if (attempts >= maxAttempts) {
+			clearInterval(timer);
+			console.warn("Автовыгрузка не запущена: дашборд или авторизация не готовы");
+		}
+	}, 1000);
 };
