@@ -1,14 +1,9 @@
-import sys
-if sys.platform == "win32":
-    import asyncio
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 import time
 import os
 from datetime import datetime
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Form, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from utils import main_process, get_last_week_dates
@@ -16,12 +11,9 @@ from config import settings
 import zipfile
 import io
 from fastapi.responses import StreamingResponse
-from playwright.async_api import async_playwright
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
+from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 import tempfile
 import shutil
-from playwright.sync_api import sync_playwright
 
 app = FastAPI(title="MIAC Report Service")
 templates = Jinja2Templates(directory="templates")
@@ -35,110 +27,95 @@ schedule_config = {
 
 scheduler = None
 
+@app.get("/auto-scrape")
+async def auto_scrape():
+    dashboard_url = (
+        "https://info-bi-db.egisz.rosminzdrav.ru/"
+        "dashboardsViewer?sectionId=27&dashboardId=8d82093225eb470595ae4d49d2edc555"
+        "&sheetId=75e7b48008b34db482c350b2333e2d45"
+    )
 
-def sync_auto_scrape():
-    """Synchronous Playwright scraper - runs in thread"""
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context(
-            viewport={'width': 1920, 'height': 1080},
-            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        )
-        page = context.new_page()
-
-        # TODO: Replace with real login flow from utils.py
-        page.goto("https://info-bi-db.egisz.rosminzdrav.ru/")
-        # page.fill("input[name='login']", settings.login)  # Adapt selectors
-        # page.fill("input[name='password']", settings.password)
-        # page.click("button[type='submit']")
-        page.wait_for_load_state("networkidle")
-
-        # Navigate to dashboard
-        page.goto(
-            "https://info-bi-db.egisz.rosminzdrav.ru/dashboardsViewer?sectionId=27&dashboardId=8d82093225eb470595ae4d49d2edc555&sheetId=75e7b48008b34db482c350b2333e2d45")
-        page.wait_for_load_state("networkidle")
-
-        # Inject sd.js scraping logic (paste BODYS + functions here)
+    try:
         with open("static/extension/sd.js", "r", encoding="utf-8") as f:
             sd_js = f.read()
-        page.add_init_script(sd_js)
+    except FileNotFoundError:
+        raise HTTPException(status_code=500, detail="Не найден static/extension/sd.js")
 
-        # Set dates to last week (from utils.py)
-        from utils import get_last_week_dates
-        date_from, date_to = get_last_week_dates()
-        page.evaluate(f"""
-            // Replace DSTART/DSTOP in BODYS with '{date_from}', '{date_to}'
-            // Trigger addB() or main scraping function
-            window.run_scrape();  // Define this in sd.js injection
-        """)
-
-        # Download parse.json (adapt selector)
-        download_path = tempfile.mkdtemp()
-        with page.expect_download(timeout=30000) as download_info:
-            page.evaluate("writeFile('parse.json', JSON.stringify(result));")
-        download = download_info.value
-        download.save_as(f"{download_path}/parse.json")
-
-        # Copy result
-        shutil.copy(f"{download_path}/parse.json", "scraped_parse.json")
-        browser.close()
-        return {"status": "success", "file": "scraped_parse.json"}
-
-
-@app.get("/auto-scrape")
-async def auto_scrape():
-    """Async wrapper - runs sync scraper in thread"""
-    loop = asyncio.get_event_loop()
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        result = await loop.run_in_executor(executor, sync_auto_scrape)
-    if os.path.exists("scraped_parse.json"):
-        return FileResponse("scraped_parse.json", filename="parse.json", media_type="application/json")
-    return {"error": "Scrape failed"}
-
-@app.get("/auto-scrape")
-async def auto_scrape():
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(
-            viewport={'width': 1920, 'height': 1080},
-            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        )
-        page = await context.new_page()
+        browser = None
+        context = None
+        try:
+            browser = await p.chromium.launch(
+                headless=False,
+                args=["--disable-dev-shm-usage", "--no-sandbox"],
+            )
+            context = await browser.new_context(
+                viewport={"width": 1920, "height": 1080},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                accept_downloads=True,
+            )
+            page = await context.new_page()
 
-        # Navigate and login (adapt selectors/credentials from utils.py)
-        await page.goto("https://info-bi-db.egisz.rosminzdrav.ru/login")  # Adjust login URL
-        await page.fill("input[name='login']", "YOUR_GOSUSLUGI_LOGIN")  # Use env vars
-        await page.fill("input[name='password']", "YOUR_GOSUSLUGI_PASSWORD")
-        await page.click("button[type='submit']")
-        await page.wait_for_load_state("networkidle")
+            # 1) Открываем дашборд: пользователь вручную проходит авторизацию.
+            await page.goto(dashboard_url, wait_until="domcontentloaded")
 
-        # Go to dashboard
-        await page.goto(
-            "https://info-bi-db.egisz.rosminzdrav.ru/dashboardsViewer?sectionId=27&dashboardId=8d82093225eb470595ae4d49d2edc555&sheetId=75e7b48008b34db482c350b2333e2d45")
-        await page.wait_for_load_state("networkidle")
+            # 2) Ждём, пока после логина появится access_token в sessionStorage.
+            await page.wait_for_function(
+                """
+                () => {
+                    const raw = sessionStorage.getItem('oidc.user:/idsrv:DashboardsApp');
+                    if (!raw) return false;
+                    try { return !!JSON.parse(raw)?.access_token; } catch (_) { return false; }
+                }
+                """,
+                timeout=300_000,
+            )
 
-        # Inject and run sd.js logic (paste BODYS array and functions from sd.js)
-        await page.add_init_script("""
-            // Paste full sd.js content here, replace window.onload with immediate execution
-            // Set dates to last week via get_last_week_dates() logic
-            // Trigger addB() to scrape and generate parse.json
-        """)
-        await page.evaluate("run_scrape();")  # Custom function wrapping sd.js logic
+            # 3) Ожидаем download и запускаем скрипт сбора.
+            async with page.expect_download(timeout=900_000) as download_info:
+                await page.add_script_tag(content=sd_js)
+                await page.evaluate(
+                    """
+                    async () => {
+                        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-        # Download parse.json
-        download_path = tempfile.mkdtemp()
-        async with page.expect_download() as download_info:
-            await page.evaluate("writeFile('parse.json', JSON.stringify(result));")  # Trigger download
-        download = await download_info.value
-        await download.save_as(f"{download_path}/parse.json")
+                        const btn = document.createElement('div');
+                        btn.className = 'rb-filter-cancel-button button';
+                        btn.style.display = 'none';
+                        document.body.appendChild(btn);
 
-        data = await page.evaluate("JSON.parse(localStorage.getItem('scraped_data'))")  # Fallback
+                        // Пытаемся корректно встроить кнопку в iframe-UI и дождаться загрузки.
+                        for (let i = 0; i < 120; i++) {
+                            try { checkLoad(btn); } catch (_) {}
+                            await sleep(500);
+                        }
 
-        await browser.close()
+                        addB(btn);
+                        await sleep(300);
+                        btn.click();
+                    }
+                    """
+                )
 
-        # Process/parse json and integrate with main_process() if needed
-        shutil.copy(f"{download_path}/parse.json", "parse.json")
-        return FileResponse("parse.json", filename="parse.json")
+            download = await download_info.value
+            parse_path = os.path.join(tempfile.mkdtemp(), "parse.json")
+            await download.save_as(parse_path)
+            shutil.copy(parse_path, "parse.json")
+
+            return FileResponse("parse.json", filename="parse.json", media_type="application/json")
+
+        except PlaywrightTimeoutError as exc:
+            raise HTTPException(
+                status_code=408,
+                detail="Таймаут: не удалось завершить авторизацию или получить parse.json"
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Ошибка автосбора: {exc}") from exc
+        finally:
+            if context is not None:
+                await context.close()
+            if browser is not None:
+                await browser.close()
 
 @app.get("/install-extension")
 async def install_extension():
