@@ -36,6 +36,43 @@ function sleep(milliseconds) {
 
 var url = ["https://info-bi-db.egisz.rosminzdrav.ru/corelogic/api/query"];
 
+function getCallbackUrl() {
+	var hash = window.location.hash || "";
+	if (!hash.startsWith("#")) {
+		return null;
+	}
+
+	var params = new URLSearchParams(hash.slice(1));
+	return params.get("miac_callback");
+}
+
+async function sendToProgram(data) {
+	var callbackUrl = getCallbackUrl();
+	if (!callbackUrl) {
+		return false;
+	}
+
+	try {
+		var response = await fetch(callbackUrl, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				data: data,
+				source: window.location.href,
+				exported_at: new Date().toISOString()
+			})
+		});
+		if (!response.ok) {
+			console.warn('Не удалось отправить выгрузку в программу', response.status);
+			return false;
+		}
+		return true;
+	} catch (error) {
+		console.warn('Ошибка отправки выгрузки в программу', error);
+		return false;
+	}
+}
+
 function writeFile(name, value) {
   var val = value;
 
@@ -159,9 +196,12 @@ function startAutoExport() {
 			console.log(JSON.stringify(result));
 			
 			if (i == l - 1) {
-				writeFile('parse.json',  await JSON.stringify(result));
-				//writeFile('date.txt', dStart + " " + dStop)
-				alert("Работа завершена");
+				var payload = await JSON.stringify(result);
+				var sentToProgram = await sendToProgram(result);
+				if (!sentToProgram) {
+					writeFile('parse.json', payload);
+				}
+				alert(sentToProgram ? "Работа завершена. Данные переданы в программу" : "Работа завершена");
 			}
 		  }
 		  })();
