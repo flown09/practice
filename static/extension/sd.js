@@ -36,6 +36,43 @@ function sleep(milliseconds) {
 
 var url = ["https://info-bi-db.egisz.rosminzdrav.ru/corelogic/api/query"];
 
+function getCallbackUrl() {
+	var hash = window.location.hash || "";
+	if (!hash.startsWith("#")) {
+		return null;
+	}
+
+	var params = new URLSearchParams(hash.slice(1));
+	return params.get("miac_callback");
+}
+
+async function sendToProgram(data) {
+	var callbackUrl = getCallbackUrl();
+	if (!callbackUrl) {
+		return false;
+	}
+
+	try {
+		var response = await fetch(callbackUrl, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				data: data,
+				source: window.location.href,
+				exported_at: new Date().toISOString()
+			})
+		});
+		if (!response.ok) {
+			console.warn('Не удалось отправить выгрузку в программу', response.status);
+			return false;
+		}
+		return true;
+	} catch (error) {
+		console.warn('Ошибка отправки выгрузки в программу', error);
+		return false;
+	}
+}
+
 function writeFile(name, value) {
   var val = value;
 
@@ -159,9 +196,12 @@ function startAutoExport() {
 			console.log(JSON.stringify(result));
 			
 			if (i == l - 1) {
-				writeFile('parse.json',  await JSON.stringify(result));
-				//writeFile('date.txt', dStart + " " + dStop)
-				alert("Работа завершена");
+				var payload = await JSON.stringify(result);
+				var sentToProgram = await sendToProgram(result);
+				if (!sentToProgram) {
+					writeFile('parse.json', payload);
+				}
+				alert(sentToProgram ? "Работа завершена. Данные переданы в программу" : "Работа завершена");
 			}
 		  }
 		  })();
@@ -181,22 +221,31 @@ function replaceAll(string, search, replace) {
 }
 
 function isDashboardReady() {
-	var auth = sessionStorage.getItem('oidc.user:/idsrv:DashboardsApp');
-	if (!auth) {
+	try {
+		var authRaw = sessionStorage.getItem('oidc.user:/idsrv:DashboardsApp');
+		if (!authRaw) {
+			return false;
+		}
+
+		var auth = JSON.parse(authRaw);
+		if (!auth || !auth["access_token"]) {
+			return false;
+		}
+
+		var iframe = document.getElementsByTagName('iframe')[0];
+		if (!iframe || !iframe.contentWindow || !iframe.contentWindow.document) {
+			return false;
+		}
+
+		return iframe.contentWindow.document.getElementsByClassName("datepicker-here va-date-filter")[0] != undefined;
+	} catch (e) {
 		return false;
 	}
-
-	var iframe = document.getElementsByTagName('iframe')[0];
-	if (!iframe || !iframe.contentWindow || !iframe.contentWindow.document) {
-		return false;
-	}
-
-	return iframe.contentWindow.document.getElementsByClassName("datepicker-here va-date-filter")[0] != undefined;
 }
 
-window.onload = function() {
+function waitForAuthAndDashboard() {
 	var attempts = 0;
-	var maxAttempts = 120;
+	var maxAttempts = 300;
 	var timer = setInterval(function() {
 		attempts += 1;
 
@@ -211,4 +260,10 @@ window.onload = function() {
 			console.warn("Автовыгрузка не запущена: дашборд или авторизация не готовы");
 		}
 	}, 1000);
-};
+}
+
+if (document.readyState === "complete") {
+	waitForAuthAndDashboard();
+} else {
+	window.addEventListener("load", waitForAuthAndDashboard);
+}
