@@ -181,22 +181,31 @@ function replaceAll(string, search, replace) {
 }
 
 function isDashboardReady() {
-	var auth = sessionStorage.getItem('oidc.user:/idsrv:DashboardsApp');
-	if (!auth) {
+	try {
+		var authRaw = sessionStorage.getItem('oidc.user:/idsrv:DashboardsApp');
+		if (!authRaw) {
+			return false;
+		}
+
+		var auth = JSON.parse(authRaw);
+		if (!auth || !auth["access_token"]) {
+			return false;
+		}
+
+		var iframe = document.getElementsByTagName('iframe')[0];
+		if (!iframe || !iframe.contentWindow || !iframe.contentWindow.document) {
+			return false;
+		}
+
+		return iframe.contentWindow.document.getElementsByClassName("datepicker-here va-date-filter")[0] != undefined;
+	} catch (e) {
 		return false;
 	}
-
-	var iframe = document.getElementsByTagName('iframe')[0];
-	if (!iframe || !iframe.contentWindow || !iframe.contentWindow.document) {
-		return false;
-	}
-
-	return iframe.contentWindow.document.getElementsByClassName("datepicker-here va-date-filter")[0] != undefined;
 }
 
-window.onload = function() {
+function waitForAuthAndDashboard() {
 	var attempts = 0;
-	var maxAttempts = 120;
+	var maxAttempts = 300;
 	var timer = setInterval(function() {
 		attempts += 1;
 
@@ -211,4 +220,10 @@ window.onload = function() {
 			console.warn("Автовыгрузка не запущена: дашборд или авторизация не готовы");
 		}
 	}, 1000);
-};
+}
+
+if (document.readyState === "complete") {
+	waitForAuthAndDashboard();
+} else {
+	window.addEventListener("load", waitForAuthAndDashboard);
+}
