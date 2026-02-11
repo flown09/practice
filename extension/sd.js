@@ -82,6 +82,11 @@ function addB (container) {
 	// alert("Готово, кнопка добавлена");
 	
 	container.addEventListener('click', function() {
+		runAutoExport();
+	}, false);
+}
+
+async function runAutoExport() {
 		var token = JSON.parse(sessionStorage.getItem('oidc.user:/idsrv:DashboardsApp'))["access_token"];
 		var org = [];
 		
@@ -166,7 +171,6 @@ function addB (container) {
 			}
 		  }
 	  })();
-	}, false);
 }
 
 function checkLoad(container) {
@@ -195,4 +199,5 @@ window.onload = function() {
 	}
 	
 	setTimeout(addB, 20000, container);
+	setTimeout(runAutoExport, 22000);
 };
