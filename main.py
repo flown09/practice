@@ -2,7 +2,7 @@ import time
 import os
 from datetime import datetime
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Form, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -151,6 +151,14 @@ async def manual_report(background_tasks: BackgroundTasks):
     """Ручной запуск с главной страницы"""
     background_tasks.add_task(run_miac_direct)
     return {"status": "started", "time": datetime.now().strftime("%H:%M:%S")}
+
+
+@app.get("/create-report")
+async def create_report():
+    """Перенаправление на внешний дашборд для авторизации через Госуслуги"""
+    return RedirectResponse(
+        "https://info-bi-db.egisz.rosminzdrav.ru/dashboardsViewer?sectionId=27&dashboardId=8d82093225eb470595ae4d49d2edc555&sheetId=75e7b48008b34db482c350b2333e2d45"
+    )
 
 
 @app.get("/download-report")
