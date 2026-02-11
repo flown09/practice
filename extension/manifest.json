@@ -1,0 +1,27 @@
+{
+  "manifest_version" : 3,
+  "name": "Dashbord",
+  "version": "1.0",
+  "description": "Плагин для дашборда",
+  "permissions": ["activeTab"],
+  "content_scripts": [
+    {
+      "matches": ["https://info-bi-db.egisz.rosminzdrav.ru/*"],
+      "js": ["script-loader.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "web_accessible_resources": [{
+    "resources": ["sd.js"],
+    "matches": ["<all_urls>"],
+    "extension_ids": []
+  }],
+  "icons": { 
+    "16": "img/icon16.png",
+    "48": "img/icon48.png",
+    "128": "img/icon128.png"
+  },
+  "action": {
+    "default_icon": "img/icon48.png"
+  }
+}
