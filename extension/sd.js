@@ -34,7 +34,7 @@ function sleep(milliseconds) {
     } while (currentDate - date < milliseconds); 
 } 
 
-var url = ["https://info-bi-db.egisz.rosminzdrav.ru/corelogic/api/query"];
+var url = ["/egisz/corelogic/api/query"];
 
 function writeFile(name, value) {
   var val = value;
@@ -82,6 +82,11 @@ function addB (container) {
 	// alert("Готово, кнопка добавлена");
 	
 	container.addEventListener('click', function() {
+		runAutoExport();
+	}, false);
+}
+
+async function runAutoExport() {
 		var token = JSON.parse(sessionStorage.getItem('oidc.user:/idsrv:DashboardsApp'))["access_token"];
 		var org = [];
 		
@@ -166,7 +171,6 @@ function addB (container) {
 			}
 		  }
 	  })();
-	}, false);
 }
 
 function checkLoad(container) {
@@ -182,6 +186,30 @@ function replaceAll(string, search, replace) {
   return string.split(search).join(replace);
 }
 
+var autoExportStarted = false;
+
+function canStartAutoExport() {
+	try {
+		var tokenData = sessionStorage.getItem('oidc.user:/idsrv:DashboardsApp');
+		if (!tokenData) return false;
+		var token = JSON.parse(tokenData)["access_token"];
+		if (!token) return false;
+		var iframe = document.getElementsByTagName('iframe')[0];
+		if (!iframe || !iframe.contentWindow || !iframe.contentWindow.document) return false;
+		var dateFilter = iframe.contentWindow.document.getElementsByClassName("datepicker-here va-date-filter");
+		return dateFilter && dateFilter.length > 0 && dateFilter[0].value && dateFilter[0].value.includes("-");
+	} catch (e) {
+		return false;
+	}
+}
+
+function tryAutoStart() {
+	if (autoExportStarted) return;
+	if (!canStartAutoExport()) return;
+	autoExportStarted = true;
+	runAutoExport();
+}
+
 window.onload = function() {
 	var t = 5000;
 	
@@ -195,4 +223,12 @@ window.onload = function() {
 	}
 	
 	setTimeout(addB, 20000, container);
+	setTimeout(tryAutoStart, 22000);
+	var autoTimer = setInterval(function() {
+		if (autoExportStarted) {
+			clearInterval(autoTimer);
+			return;
+		}
+		tryAutoStart();
+	}, 3000);
 };

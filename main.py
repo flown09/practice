@@ -1,8 +1,11 @@
 import time
 import os
 from datetime import datetime
-from fastapi import FastAPI, BackgroundTasks, HTTPException, Form, Request
-from fastapi.responses import FileResponse, HTMLResponse
+import requests
+from requests.exceptions import SSLError as RequestsSSLError, RequestException
+
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Form, Request, Response
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -22,6 +25,30 @@ schedule_config = {
 }
 
 scheduler = None  # Глобальная переменная для текущего планировщика
+
+EXTERNAL_BASE_URL = "https://info-bi-db.egisz.rosminzdrav.ru"
+
+def _rewrite_location_header(location: str) -> str:
+    if location.startswith(EXTERNAL_BASE_URL):
+        return "/egisz" + location[len(EXTERNAL_BASE_URL):]
+    if location.startswith("/"):
+        return "/egisz" + location
+    return location
+
+def _egisz_ssl_verify_value():
+    """Параметр verify для requests к внешнему дашборду."""
+    if settings.egisz_ca_bundle:
+        return settings.egisz_ca_bundle
+    return settings.egisz_ssl_verify
+
+def _inject_autostart_script(html: str) -> str:
+    script_tag = '<script src="/autostart.js"></script>'
+    if script_tag in html:
+        return html
+    if "</body>" in html:
+        return html.replace("</body>", f"{script_tag}</body>")
+    return html + script_tag
+
 
 def create_scheduler():
     """Создает и возвращает новый чистый планировщик"""
@@ -152,6 +179,100 @@ async def manual_report(background_tasks: BackgroundTasks):
     background_tasks.add_task(run_miac_direct)
     return {"status": "started", "time": datetime.now().strftime("%H:%M:%S")}
 
+
+@app.get("/create-report")
+async def create_report():
+    """Перенаправление на внешний дашборд для авторизации через Госуслуги"""
+    return RedirectResponse(
+        "/egisz/dashboardsViewer?sectionId=27&dashboardId=8d82093225eb470595ae4d49d2edc555&sheetId=75e7b48008b34db482c350b2333e2d45"
+    )
+
+
+
+
+@app.get("/autostart.js")
+async def autostart_script():
+    """JS для автозапуска выгрузки на проксированной странице дашборда"""
+    with open("extension/sd.js", "r", encoding="utf-8") as f:
+        script = f.read()
+    return PlainTextResponse(script, media_type="application/javascript")
+
+
+@app.api_route("/egisz/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+async def egisz_proxy(full_path: str, request: Request):
+    """Прокси внешнего дашборда для работы без браузерного расширения"""
+    query = ("?" + request.url.query) if request.url.query else ""
+    target_url = f"{EXTERNAL_BASE_URL}/{full_path}{query}"
+
+    incoming_headers = dict(request.headers)
+    incoming_headers.pop("host", None)
+    incoming_headers.pop("content-length", None)
+
+    body = await request.body()
+
+    verify_value = _egisz_ssl_verify_value()
+    used_insecure_ssl_fallback = False
+    try:
+        upstream = requests.request(
+            request.method,
+            target_url,
+            headers=incoming_headers,
+            data=body,
+            allow_redirects=False,
+            timeout=60,
+            verify=verify_value,
+        )
+    except RequestsSSLError as exc:
+        if settings.egisz_ssl_allow_insecure_fallback and verify_value is not False:
+            upstream = requests.request(
+                request.method,
+                target_url,
+                headers=incoming_headers,
+                data=body,
+                allow_redirects=False,
+                timeout=60,
+                verify=False,
+            )
+            used_insecure_ssl_fallback = True
+        else:
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    "Ошибка SSL при подключении к внешнему дашборду. "
+                    "Укажите доверенный CA в settings.egisz_ca_bundle "
+                    "или временно отключите проверку сертификата settings.egisz_ssl_verify=false. "
+                    f"Детали: {exc}"
+                ),
+            )
+    except RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Ошибка запроса к внешнему дашборду: {exc}")
+
+    content = upstream.content
+    content_type = upstream.headers.get("content-type", "")
+
+    if "text/html" in content_type:
+        html = content.decode("utf-8", errors="ignore")
+        html = html.replace(EXTERNAL_BASE_URL, "/egisz")
+        if "dashboardsViewer" in full_path:
+            html = _inject_autostart_script(html)
+        content = html.encode("utf-8")
+
+    excluded = {"content-length", "transfer-encoding", "connection", "content-encoding"}
+    headers = {k: v for k, v in upstream.headers.items() if k.lower() not in excluded and k.lower() != "set-cookie"}
+
+    if "location" in upstream.headers:
+        headers["location"] = _rewrite_location_header(upstream.headers["location"])
+
+    response = Response(content=content, status_code=upstream.status_code, headers=headers)
+
+    if used_insecure_ssl_fallback:
+        response.headers.setdefault("x-egisz-ssl-warning", "insecure-fallback-used")
+
+    cookies = upstream.raw.headers.get_all("Set-Cookie") if hasattr(upstream.raw.headers, "get_all") else []
+    for cookie in cookies:
+        response.headers.append("set-cookie", cookie.replace("Domain=info-bi-db.egisz.rosminzdrav.ru;", ""))
+
+    return response
 
 @app.get("/download-report")
 async def download_report():
