@@ -2,6 +2,7 @@ import time
 import os
 from datetime import datetime
 import requests
+from requests.exceptions import SSLError as RequestsSSLError, RequestException
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Form, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, PlainTextResponse
@@ -33,6 +34,12 @@ def _rewrite_location_header(location: str) -> str:
     if location.startswith("/"):
         return "/egisz" + location
     return location
+
+def _egisz_ssl_verify_value():
+    """Параметр verify для requests к внешнему дашборду."""
+    if settings.egisz_ca_bundle:
+        return settings.egisz_ca_bundle
+    return settings.egisz_ssl_verify
 
 def _inject_autostart_script(html: str) -> str:
     script_tag = '<script src="/autostart.js"></script>'
@@ -203,14 +210,28 @@ async def egisz_proxy(full_path: str, request: Request):
 
     body = await request.body()
 
-    upstream = requests.request(
-        request.method,
-        target_url,
-        headers=incoming_headers,
-        data=body,
-        allow_redirects=False,
-        timeout=60,
-    )
+    try:
+        upstream = requests.request(
+            request.method,
+            target_url,
+            headers=incoming_headers,
+            data=body,
+            allow_redirects=False,
+            timeout=60,
+            verify=_egisz_ssl_verify_value(),
+        )
+    except RequestsSSLError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Ошибка SSL при подключении к внешнему дашборду. "
+                "Укажите доверенный CA в settings.egisz_ca_bundle "
+                "или временно отключите проверку сертификата settings.egisz_ssl_verify=false. "
+                f"Детали: {exc}"
+            ),
+        )
+    except RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Ошибка запроса к внешнему дашборду: {exc}")
 
     content = upstream.content
     content_type = upstream.headers.get("content-type", "")
