@@ -30,9 +30,7 @@ EXTERNAL_BASE_URL = "https://info-bi-db.egisz.rosminzdrav.ru"
 
 def _rewrite_location_header(location: str) -> str:
     if location.startswith(EXTERNAL_BASE_URL):
-        return "/egisz" + location[len(EXTERNAL_BASE_URL):]
-    if location.startswith("/"):
-        return "/egisz" + location
+        return location[len(EXTERNAL_BASE_URL):] or "/"
     return location
 
 def _egisz_ssl_verify_value():
@@ -296,6 +294,9 @@ async def external_prefix_proxy(prefix: str, full_path: str, request: Request):
     target_path = f"{prefix}/{full_path}" if full_path else prefix
     return await _proxy_to_external(request, target_path, inject_autostart=False)
 
+
+
+
 @app.get("/download-report")
 async def download_report():
     """Скачать готовый отчет"""
@@ -318,3 +319,17 @@ async def dates():
 async def docs_redirect():
     """Перенаправление на Swagger"""
     return {"docs": "/docs", "ui": "http://localhost:8000/docs"}
+
+
+@app.get("/{full_path:path}")
+async def external_fallback_proxy(full_path: str, request: Request):
+    """Fallback для корневых ресурсов внешнего SPA, которые не покрыты локальными роутами."""
+    if full_path.startswith("egisz/"):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    accept = request.headers.get("accept", "")
+    is_static_like = "." in full_path or any(x in accept for x in ["text/css", "application/javascript", "image/", "font/"])
+    if not is_static_like:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    return await _proxy_to_external(request, full_path, inject_autostart=False)
