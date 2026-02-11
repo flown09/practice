@@ -101,12 +101,21 @@
     <div class="card">
         <h3>Создание отчета</h3>
         <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-            <a href="https://info-bi-db.egisz.rosminzdrav.ru/dashboardsViewer?sectionId=27&dashboardId=8d82093225eb470595ae4d49d2edc555&sheetId=75e7b48008b34db482c350b2333e2d45" target="_blank">
+            <a id="openDashboard" href="#" target="_blank">
                 <button style="background: #28a745; padding: 12px 30px; font-size: 16px; margin-right: 10px;">Открыть дашборд</button>
             </a>
-            <a href="/install-extension" target="_blank">
-                <button style="background: #ffc107; color: #000; padding: 12px 30px; font-size: 16px;">Установить скрипт</button>
-            </a>
+            <div style="display:flex;align-items:center;background:#e8f5e9;color:#1b5e20;padding:10px 14px;border-radius:6px;">
+                Выгрузка встроена в программу: после авторизации данные автоматически отправляются обратно в сервис.
+            </div>
+        </div>
+        <div style="margin-top:12px; background:#f8f9fa; border-radius:6px; padding:10px 14px; font-size:14px;">
+            <b>Как это работает:</b>
+            <ol style="margin:8px 0 0 18px; padding:0;">
+                <li>Нажмите «Открыть дашборд» — ссылка передаёт callback вашего сервиса.</li>
+                <li>Авторизуйтесь на портале Госуслуг.</li>
+                <li>После появления дашборда скрипт автоматически начинает сбор данных.</li>
+                <li>По завершении данные отправляются в программу в файл <code>parse.json</code>.</li>
+            </ol>
         </div>
     </div>
 
@@ -127,6 +136,10 @@
             content.classList.toggle('collapsed');
             icon.classList.toggle('rotated');
         }
+
+        const dashboardBaseUrl = 'https://info-bi-db.egisz.rosminzdrav.ru/dashboardsViewer?sectionId=27&dashboardId=8d82093225eb470595ae4d49d2edc555&sheetId=75e7b48008b34db482c350b2333e2d45';
+        const callbackUrl = `${window.location.origin}/extension/export`;
+        document.getElementById('openDashboard').href = `${dashboardBaseUrl}#miac_callback=${encodeURIComponent(callbackUrl)}`;
 
         // Сохранение расписания
         document.getElementById('scheduleForm').onsubmit = async (e) => {

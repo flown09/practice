@@ -36,6 +36,43 @@ function sleep(milliseconds) {
 
 var url = ["https://info-bi-db.egisz.rosminzdrav.ru/corelogic/api/query"];
 
+function getCallbackUrl() {
+	var hash = window.location.hash || "";
+	if (!hash.startsWith("#")) {
+		return null;
+	}
+
+	var params = new URLSearchParams(hash.slice(1));
+	return params.get("miac_callback");
+}
+
+async function sendToProgram(data) {
+	var callbackUrl = getCallbackUrl();
+	if (!callbackUrl) {
+		return false;
+	}
+
+	try {
+		var response = await fetch(callbackUrl, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				data: data,
+				source: window.location.href,
+				exported_at: new Date().toISOString()
+			})
+		});
+		if (!response.ok) {
+			console.warn('Не удалось отправить выгрузку в программу', response.status);
+			return false;
+		}
+		return true;
+	} catch (error) {
+		console.warn('Ошибка отправки выгрузки в программу', error);
+		return false;
+	}
+}
+
 function writeFile(name, value) {
   var val = value;
 
@@ -52,8 +89,38 @@ function writeFile(name, value) {
   document.body.removeChild(download);
 }
 
+function getAuthPayload() {
+	var key = 'oidc.user:/idsrv:DashboardsApp';
+	var rawSession = sessionStorage.getItem(key);
+	if (rawSession) {
+		try {
+			var parsedSession = JSON.parse(rawSession);
+			if (parsedSession && parsedSession["access_token"]) {
+				return parsedSession;
+			}
+		} catch (e) {}
+	}
+
+	var rawLocal = localStorage.getItem(key);
+	if (rawLocal) {
+		try {
+			var parsedLocal = JSON.parse(rawLocal);
+			if (parsedLocal && parsedLocal["access_token"]) {
+				return parsedLocal;
+			}
+		} catch (e) {}
+	}
+
+	return null;
+}
+
+function getAccessToken() {
+	var auth = getAuthPayload();
+	return auth ? auth["access_token"] : null;
+}
+
 async function getReq(o, dStart, dStop) {
-	var token = JSON.parse(sessionStorage.getItem('oidc.user:/idsrv:DashboardsApp'))["access_token"];
+	var token = getAccessToken();
 	var req = [];
 
 	for (var j = 0; j < BODYS.length; j++) {
@@ -79,9 +146,15 @@ function startAutoExport() {
 		return;
 	}
 
-	autoExportStarted = true;
+	var token = getAccessToken();
+	if (!token) {
+		console.warn("[MIAC] Токен авторизации не найден, автовыгрузка отложена");
+		return;
+	}
 
-		var token = JSON.parse(sessionStorage.getItem('oidc.user:/idsrv:DashboardsApp'))["access_token"];
+	autoExportStarted = true;
+	console.log("[MIAC] Авторизация найдена, запускаю автовыгрузку...");
+
 		var org = [];
 		
 		options["body"] = _ORG_;
@@ -159,9 +232,12 @@ function startAutoExport() {
 			console.log(JSON.stringify(result));
 			
 			if (i == l - 1) {
-				writeFile('parse.json',  await JSON.stringify(result));
-				//writeFile('date.txt', dStart + " " + dStop)
-				alert("Работа завершена");
+				var payload = await JSON.stringify(result);
+				var sentToProgram = await sendToProgram(result);
+				if (!sentToProgram) {
+					writeFile('parse.json', payload);
+				}
+				alert(sentToProgram ? "Работа завершена. Данные переданы в программу" : "Работа завершена");
 			}
 		  }
 		  })();
@@ -181,34 +257,49 @@ function replaceAll(string, search, replace) {
 }
 
 function isDashboardReady() {
-	var auth = sessionStorage.getItem('oidc.user:/idsrv:DashboardsApp');
-	if (!auth) {
+	try {
+		if (!getAccessToken()) {
+			return false;
+		}
+
+		var iframe = document.getElementsByTagName('iframe')[0];
+		if (!iframe || !iframe.contentWindow || !iframe.contentWindow.document) {
+			return false;
+		}
+
+		return iframe.contentWindow.document.getElementsByClassName("datepicker-here va-date-filter")[0] != undefined;
+	} catch (e) {
 		return false;
 	}
-
-	var iframe = document.getElementsByTagName('iframe')[0];
-	if (!iframe || !iframe.contentWindow || !iframe.contentWindow.document) {
-		return false;
-	}
-
-	return iframe.contentWindow.document.getElementsByClassName("datepicker-here va-date-filter")[0] != undefined;
 }
 
-window.onload = function() {
+function waitForAuthAndDashboard() {
+	console.log("[MIAC] Ожидание авторизации и готовности дашборда...");
 	var attempts = 0;
-	var maxAttempts = 120;
+	var maxAttempts = 300;
 	var timer = setInterval(function() {
 		attempts += 1;
 
 		if (isDashboardReady()) {
 			clearInterval(timer);
+			console.log("[MIAC] Дашборд готов, запускаю сбор данных");
 			startAutoExport();
 			return;
 		}
 
+		if (attempts % 20 === 0) {
+			console.log("[MIAC] Всё ещё ожидаю авторизацию/дашборд... попытка", attempts);
+		}
+
 		if (attempts >= maxAttempts) {
 			clearInterval(timer);
-			console.warn("Автовыгрузка не запущена: дашборд или авторизация не готовы");
+			console.warn("[MIAC] Автовыгрузка не запущена: дашборд или авторизация не готовы");
 		}
 	}, 1000);
-};
+}
+
+if (document.readyState === "complete") {
+	waitForAuthAndDashboard();
+} else {
+	window.addEventListener("load", waitForAuthAndDashboard);
+}
