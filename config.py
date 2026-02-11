@@ -9,5 +9,7 @@ class Settings(BaseSettings):
     employer: str = "11421130428"
     excel_path: str = "miac_table.xlsx"
     lpu_path: str = "LPU.xlsx"
+    egisz_ssl_verify: bool = True
+    egisz_ca_bundle: str | None = None
 
 settings = Settings()
