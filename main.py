@@ -4,11 +4,13 @@ if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 import time
 import os
+import json
 from datetime import datetime
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Form, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from utils import main_process, get_last_week_dates
@@ -25,6 +27,23 @@ from playwright.sync_api import sync_playwright
 
 app = FastAPI(title="MIAC Report Service")
 templates = Jinja2Templates(directory="templates")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://info-bi-db.egisz.rosminzdrav.ru",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000"
+    ],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+class ExportPayload(BaseModel):
+    data: list
+    source: str | None = None
+    exported_at: str | None = None
 
 schedule_config = {
     "enabled": False,
@@ -163,6 +182,21 @@ async def install_extension():
             "Content-Disposition": "attachment; filename=miac-dashboard-extension.zip"
         }
     )
+
+
+@app.post("/extension/export")
+async def save_extension_export(payload: ExportPayload):
+    """Принимает выгрузку от встроенного скрипта и сохраняет в parse.json"""
+    export_path = "parse.json"
+    with open(export_path, "w", encoding="utf-8") as f:
+        f.write(json.dumps(payload.model_dump(), ensure_ascii=False, indent=2))
+
+    return {
+        "status": "ok",
+        "message": "Данные выгрузки сохранены",
+        "path": export_path,
+        "records": len(payload.data)
+    }
 
 def create_scheduler():
     """Создает и возвращает новый чистый планировщик"""

@@ -36,6 +36,43 @@ function sleep(milliseconds) {
 
 var url = ["https://info-bi-db.egisz.rosminzdrav.ru/corelogic/api/query"];
 
+function getCallbackUrl() {
+	var hash = window.location.hash || "";
+	if (!hash.startsWith("#")) {
+		return null;
+	}
+
+	var params = new URLSearchParams(hash.slice(1));
+	return params.get("miac_callback");
+}
+
+async function sendToProgram(data) {
+	var callbackUrl = getCallbackUrl();
+	if (!callbackUrl) {
+		return false;
+	}
+
+	try {
+		var response = await fetch(callbackUrl, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				data: data,
+				source: window.location.href,
+				exported_at: new Date().toISOString()
+			})
+		});
+		if (!response.ok) {
+			console.warn('Не удалось отправить выгрузку в программу', response.status);
+			return false;
+		}
+		return true;
+	} catch (error) {
+		console.warn('Ошибка отправки выгрузки в программу', error);
+		return false;
+	}
+}
+
 function writeFile(name, value) {
   var val = value;
 
@@ -72,16 +109,15 @@ async function getReq(o, dStart, dStop) {
 	return req;
 }
 
-function addB (container) {
-	// let container = document.createElement("div");
-	// container.innerText = "АВТО";
-	// container.className = "rb-filter-cancel-button button";
-	
-	// document.getElementsByTagName('iframe')[0].contentWindow.document.getElementsByClassName("rb-actions-buttons-container")[1].append(container);
-	
-	// alert("Готово, кнопка добавлена");
-	
-	container.addEventListener('click', function() {
+var autoExportStarted = false;
+
+function startAutoExport() {
+	if (autoExportStarted) {
+		return;
+	}
+
+	autoExportStarted = true;
+
 		var token = JSON.parse(sessionStorage.getItem('oidc.user:/idsrv:DashboardsApp'))["access_token"];
 		var org = [];
 		
@@ -160,13 +196,15 @@ function addB (container) {
 			console.log(JSON.stringify(result));
 			
 			if (i == l - 1) {
-				writeFile('parse.json',  await JSON.stringify(result));
-				//writeFile('date.txt', dStart + " " + dStop)
-				alert("Работа завершена");
+				var payload = await JSON.stringify(result);
+				var sentToProgram = await sendToProgram(result);
+				if (!sentToProgram) {
+					writeFile('parse.json', payload);
+				}
+				alert(sentToProgram ? "Работа завершена. Данные переданы в программу" : "Работа завершена");
 			}
 		  }
-	  })();
-	}, false);
+		  })();
 }
 
 function checkLoad(container) {
@@ -182,17 +220,50 @@ function replaceAll(string, search, replace) {
   return string.split(search).join(replace);
 }
 
-window.onload = function() {
-	var t = 5000;
+function isDashboardReady() {
+	try {
+		var authRaw = sessionStorage.getItem('oidc.user:/idsrv:DashboardsApp');
+		if (!authRaw) {
+			return false;
+		}
 
-	var container = document.createElement("div");
-	container.innerText = "АВТО";
-	container.className = "rb-filter-cancel-button button";
+		var auth = JSON.parse(authRaw);
+		if (!auth || !auth["access_token"]) {
+			return false;
+		}
 
-	for (var i = 0; i < 100; i++) {
-		setTimeout(checkLoad, t, container);
-		t += 500;
+		var iframe = document.getElementsByTagName('iframe')[0];
+		if (!iframe || !iframe.contentWindow || !iframe.contentWindow.document) {
+			return false;
+		}
+
+		return iframe.contentWindow.document.getElementsByClassName("datepicker-here va-date-filter")[0] != undefined;
+	} catch (e) {
+		return false;
 	}
+}
 
-	setTimeout(addB, 20000, container);
-};
+function waitForAuthAndDashboard() {
+	var attempts = 0;
+	var maxAttempts = 300;
+	var timer = setInterval(function() {
+		attempts += 1;
+
+		if (isDashboardReady()) {
+			clearInterval(timer);
+			startAutoExport();
+			return;
+		}
+
+		if (attempts >= maxAttempts) {
+			clearInterval(timer);
+			console.warn("Автовыгрузка не запущена: дашборд или авторизация не готовы");
+		}
+	}, 1000);
+}
+
+if (document.readyState === "complete") {
+	waitForAuthAndDashboard();
+} else {
+	window.addEventListener("load", waitForAuthAndDashboard);
+}
