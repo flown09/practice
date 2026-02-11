@@ -2,7 +2,6 @@ import time
 import os
 from datetime import datetime
 import requests
-import re
 from requests.exceptions import SSLError as RequestsSSLError, RequestException
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Form, Request, Response
@@ -44,24 +43,9 @@ def _egisz_ssl_verify_value():
 
 
 def _rewrite_html_for_proxy(html: str) -> str:
-    """Переписывает ссылки в HTML внешнего дашборда на локальный прокси."""
-    html = html.replace(EXTERNAL_BASE_URL, "/egisz")
-    html = html.replace("//info-bi-db.egisz.rosminzdrav.ru", "/egisz")
-
-    # src/href/action, начинающиеся с /, ведем через прокси
-    html = re.sub(
-        r'(?P<attr>\b(?:src|href|action)=\"|\b(?:src|href|action)=\')/(?P<path>(?!/|egisz/)[^\"\']*)',
-        lambda m: f"{m.group('attr')}/egisz/{m.group('path')}",
-        html,
-    )
-
-    # CSS url(/...) -> url(/egisz/...)
-    html = re.sub(
-        r'url\((?P<q>[\"\']?)/(?!/|egisz/)(?P<path>[^)\"\']+)(?P=q)\)',
-        lambda m: f"url({m.group('q')}/egisz/{m.group('path')}{m.group('q')})",
-        html,
-    )
-
+    """Нормализует абсолютные ссылки внешнего дашборда в same-origin ссылки."""
+    html = html.replace(EXTERNAL_BASE_URL, "")
+    html = html.replace("//info-bi-db.egisz.rosminzdrav.ru", "")
     return html
 
 def _inject_autostart_script(html: str) -> str:
@@ -221,9 +205,7 @@ async def autostart_script():
     return PlainTextResponse(script, media_type="application/javascript")
 
 
-@app.api_route("/egisz/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
-async def egisz_proxy(full_path: str, request: Request):
-    """Прокси внешнего дашборда для работы без браузерного расширения"""
+async def _proxy_to_external(request: Request, full_path: str, inject_autostart: bool = False):
     query = ("?" + request.url.query) if request.url.query else ""
     target_url = f"{EXTERNAL_BASE_URL}/{full_path}{query}"
 
@@ -277,7 +259,7 @@ async def egisz_proxy(full_path: str, request: Request):
     if "text/html" in content_type:
         html = content.decode("utf-8", errors="ignore")
         html = _rewrite_html_for_proxy(html)
-        if "dashboardsViewer" in full_path:
+        if inject_autostart:
             html = _inject_autostart_script(html)
         content = html.encode("utf-8")
 
@@ -297,6 +279,22 @@ async def egisz_proxy(full_path: str, request: Request):
         response.headers.append("set-cookie", cookie.replace("Domain=info-bi-db.egisz.rosminzdrav.ru;", ""))
 
     return response
+
+
+@app.api_route("/egisz/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+async def egisz_proxy(full_path: str, request: Request):
+    """Прокси внешнего дашборда для работы без браузерного расширения"""
+    return await _proxy_to_external(request, full_path, inject_autostart=("dashboardsViewer" in full_path))
+
+
+@app.api_route("/{prefix}/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+async def external_prefix_proxy(prefix: str, full_path: str, request: Request):
+    """Проксирование ключевых путей дашборда без префикса /egisz."""
+    allowed_prefixes = {"corelogic", "idsrv", "api", "assets", "content", "scripts", "styles"}
+    if prefix not in allowed_prefixes:
+        raise HTTPException(status_code=404, detail="Not found")
+    target_path = f"{prefix}/{full_path}" if full_path else prefix
+    return await _proxy_to_external(request, target_path, inject_autostart=False)
 
 @app.get("/download-report")
 async def download_report():
