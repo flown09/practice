@@ -2,6 +2,7 @@ import time
 import os
 from datetime import datetime
 import requests
+import re
 from requests.exceptions import SSLError as RequestsSSLError, RequestException
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Form, Request, Response
@@ -40,6 +41,28 @@ def _egisz_ssl_verify_value():
     if settings.egisz_ca_bundle:
         return settings.egisz_ca_bundle
     return settings.egisz_ssl_verify
+
+
+def _rewrite_html_for_proxy(html: str) -> str:
+    """Переписывает ссылки в HTML внешнего дашборда на локальный прокси."""
+    html = html.replace(EXTERNAL_BASE_URL, "/egisz")
+    html = html.replace("//info-bi-db.egisz.rosminzdrav.ru", "/egisz")
+
+    # src/href/action, начинающиеся с /, ведем через прокси
+    html = re.sub(
+        r'(?P<attr>\b(?:src|href|action)=\"|\b(?:src|href|action)=\')/(?P<path>(?!/|egisz/)[^\"\']*)',
+        lambda m: f"{m.group('attr')}/egisz/{m.group('path')}",
+        html,
+    )
+
+    # CSS url(/...) -> url(/egisz/...)
+    html = re.sub(
+        r'url\((?P<q>[\"\']?)/(?!/|egisz/)(?P<path>[^)\"\']+)(?P=q)\)',
+        lambda m: f"url({m.group('q')}/egisz/{m.group('path')}{m.group('q')})",
+        html,
+    )
+
+    return html
 
 def _inject_autostart_script(html: str) -> str:
     script_tag = '<script src="/autostart.js"></script>'
@@ -207,6 +230,7 @@ async def egisz_proxy(full_path: str, request: Request):
     incoming_headers = dict(request.headers)
     incoming_headers.pop("host", None)
     incoming_headers.pop("content-length", None)
+    incoming_headers["accept-encoding"] = "identity"
 
     body = await request.body()
 
@@ -252,7 +276,7 @@ async def egisz_proxy(full_path: str, request: Request):
 
     if "text/html" in content_type:
         html = content.decode("utf-8", errors="ignore")
-        html = html.replace(EXTERNAL_BASE_URL, "/egisz")
+        html = _rewrite_html_for_proxy(html)
         if "dashboardsViewer" in full_path:
             html = _inject_autostart_script(html)
         content = html.encode("utf-8")
