@@ -11,5 +11,6 @@ class Settings(BaseSettings):
     lpu_path: str = "LPU.xlsx"
     egisz_ssl_verify: bool = True
     egisz_ca_bundle: str | None = None
+    egisz_ssl_allow_insecure_fallback: bool = True
 
 settings = Settings()

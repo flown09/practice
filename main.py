@@ -210,6 +210,8 @@ async def egisz_proxy(full_path: str, request: Request):
 
     body = await request.body()
 
+    verify_value = _egisz_ssl_verify_value()
+    used_insecure_ssl_fallback = False
     try:
         upstream = requests.request(
             request.method,
@@ -218,18 +220,30 @@ async def egisz_proxy(full_path: str, request: Request):
             data=body,
             allow_redirects=False,
             timeout=60,
-            verify=_egisz_ssl_verify_value(),
+            verify=verify_value,
         )
     except RequestsSSLError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=(
-                "Ошибка SSL при подключении к внешнему дашборду. "
-                "Укажите доверенный CA в settings.egisz_ca_bundle "
-                "или временно отключите проверку сертификата settings.egisz_ssl_verify=false. "
-                f"Детали: {exc}"
-            ),
-        )
+        if settings.egisz_ssl_allow_insecure_fallback and verify_value is not False:
+            upstream = requests.request(
+                request.method,
+                target_url,
+                headers=incoming_headers,
+                data=body,
+                allow_redirects=False,
+                timeout=60,
+                verify=False,
+            )
+            used_insecure_ssl_fallback = True
+        else:
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    "Ошибка SSL при подключении к внешнему дашборду. "
+                    "Укажите доверенный CA в settings.egisz_ca_bundle "
+                    "или временно отключите проверку сертификата settings.egisz_ssl_verify=false. "
+                    f"Детали: {exc}"
+                ),
+            )
     except RequestException as exc:
         raise HTTPException(status_code=502, detail=f"Ошибка запроса к внешнему дашборду: {exc}")
 
@@ -250,6 +264,9 @@ async def egisz_proxy(full_path: str, request: Request):
         headers["location"] = _rewrite_location_header(upstream.headers["location"])
 
     response = Response(content=content, status_code=upstream.status_code, headers=headers)
+
+    if used_insecure_ssl_fallback:
+        response.headers.setdefault("x-egisz-ssl-warning", "insecure-fallback-used")
 
     cookies = upstream.raw.headers.get_all("Set-Cookie") if hasattr(upstream.raw.headers, "get_all") else []
     for cookie in cookies:
