@@ -9,6 +9,11 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from utils import main_process, get_last_week_dates
 from config import settings
+from pathlib import Path
+import zipfile
+import tempfile
+from fastapi.responses import FileResponse
+
 
 app = FastAPI(title="MIAC Report Service")
 templates = Jinja2Templates(directory="templates")
@@ -162,6 +167,29 @@ async def download_report():
         settings.excel_path,
         filename="миац_отчет.xlsx",
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+EXTENSION_DIR = Path(__file__).resolve().parent / "extension"
+
+@app.get("/download-extension")
+async def download_extension():
+    """Скачать расширение (zip с содержимым папки extension)"""
+    if not EXTENSION_DIR.exists():
+        raise HTTPException(404, "Папка extension не найдена на сервере")
+
+    # Можно сделать уникальный файл, чтобы не было гонок при одновременных скачиваниях
+    tmp_zip = Path(tempfile.gettempdir()) / f"Dashbord_extension_{int(time.time())}.zip"
+
+    with zipfile.ZipFile(tmp_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
+        for p in EXTENSION_DIR.rglob("*"):
+            if p.is_file():
+                # В архиве будут файлы в корне (manifest.json, sd.js, img/...)
+                z.write(p, arcname=p.relative_to(EXTENSION_DIR))
+
+    return FileResponse(
+        path=str(tmp_zip),
+        filename="Dashbord-extension.zip",
+        media_type="application/zip",
     )
 
 

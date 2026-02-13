@@ -167,6 +167,7 @@ function addB (container) {
 		  }
 	  })();
 	}, false);
+	container.dataset.handlerReady = '1';
 }
 
 function checkLoad(container) {
@@ -182,6 +183,54 @@ function replaceAll(string, search, replace) {
   return string.split(search).join(replace);
 }
 
+const OIDC_KEY = 'oidc.user:/idsrv:DashboardsApp';
+const AUTORUN_KEY = 'dashbord_autorun_done_v1';
+
+function delay(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+function getAccessToken() {
+  try {
+    const raw = sessionStorage.getItem(OIDC_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw)?.access_token || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function dashboardReady() {
+  const iframe = document.getElementsByTagName('iframe')[0];
+  if (!iframe || !iframe.contentWindow || !iframe.contentWindow.document) return false;
+
+  const doc = iframe.contentWindow.document;
+  // признаки, что дашборд уже загрузился (можете поменять селекторы под себя)
+  return !!doc.querySelector('.datepicker-here.va-date-filter')
+      && (doc.getElementsByClassName("rb-actions-buttons-container")[1] !== undefined);
+}
+
+// ждём: 1) токен есть 2) дашборд готов 3) обработчик клика уже повешен
+async function autorunWhenReady(container) {
+  if (sessionStorage.getItem(AUTORUN_KEY) === '1') return;
+
+  // подождём до ~3 минут
+  for (let i = 0; i < 180; i++) {
+    const token = getAccessToken();
+    const ready = dashboardReady();
+    const handlerReady = container?.dataset?.handlerReady === '1';
+
+    if (token && ready && handlerReady) {
+      sessionStorage.setItem(AUTORUN_KEY, '1');
+      // запускаем тот же код, что на кнопке
+      container.click();
+      return;
+    }
+    await delay(1000);
+  }
+}
+
+
 window.onload = function() {
 	var t = 5000;
 	
@@ -193,6 +242,6 @@ window.onload = function() {
 		setTimeout(checkLoad, t, container);
 		t += 500;
 	}
-	
-	setTimeout(addB, 20000, container);
+
+	autorunWhenReady(container);
 };

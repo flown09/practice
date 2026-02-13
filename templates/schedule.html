@@ -98,6 +98,35 @@
         </div>
     </div>
 
+    <div class="card">
+      <h3>Расширение для формирования отчёта</h3>
+
+      <ol style="margin-top: 0; line-height: 1.6;">
+        <li>Скачайте расширение архивом (.zip)</li>
+        <li>Распакуйте архив в любую папку (например, на Рабочий стол)</li>
+        <li>Откройте страницу расширений</li>
+        <li>Включите <b>Режим разработчика</b> → <b>Загрузить распакованное</b> → выберите распакованную папку</li>
+      </ol>
+
+      <div style="display:flex; gap:10px; flex-wrap: wrap;">
+        <a href="/download-extension">
+          <button style="flex:1; min-width: 240px;">Скачать расширение (.zip)</button>
+        </a>
+
+        <button type="button"
+                onclick="openExtensionsPage()"
+                style="background:#6f42c1; flex:1; min-width: 240px;">
+          Открыть страницу расширений
+        </button>
+      </div>
+
+      <div style="margin-top:10px; font-size: 13px; color:#555;">
+        Если кнопка “Открыть страницу расширений” не сработала — скопируйте адрес вручную:
+        <code id="extUrl" style="user-select: all;">chrome://extensions/</code>
+      </div>
+    </div>
+
+
     <!-- НОВЫЙ Блок Создание отчета -->
     <div class="card">
         <h3>Создание отчета</h3>
@@ -170,6 +199,50 @@
             // Обновляем форму
             document.getElementById('enabled').checked = false;
         }
+
+        function detectExtensionsUrl() {
+            const ua = navigator.userAgent;
+
+            // Edge
+            if (ua.includes("Edg/")) return "edge://extensions/";
+            // Opera
+            if (ua.includes("OPR/") || ua.includes("Opera")) return "opera://extensions/";
+            // Chrome / Chromium / Yandex (как правило тоже chrome://extensions/)
+            if (ua.includes("Chrome/") || ua.includes("Chromium/") || ua.includes("YaBrowser/")) return "chrome://extensions/";
+            // Firefox (на всякий случай)
+            if (ua.includes("Firefox/")) return "about:addons";
+
+            return "chrome://extensions/";
+          }
+
+            function openExtensionsPage() {
+            const url = detectExtensionsUrl();
+
+            // Покажем правильный URL в подсказке на странице
+            const el = document.getElementById("extUrl");
+            if (el) el.textContent = url;
+
+            // Пытаемся открыть. Во многих браузерах переход на chrome://... из обычной страницы блокируется — это нормально.
+            let opened = false;
+            try {
+              const w = window.open(url, "_blank");
+              opened = !!w;
+            } catch (e) {}
+
+            // Фолбэк: копируем ссылку + объясняем, что делать дальше
+            const msg =
+              "Откройте страницу расширений: " + url + "\n\n" +
+              "Далее:\n" +
+              "1) Включите «Режим разработчика»\n" +
+              "2) «Загрузить распакованное»\n" +
+              "3) Выберите папку, куда вы распаковали Dashbord-extension.zip";
+
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(url).finally(() => alert(msg + "\n\n(Адрес скопирован в буфер обмена)"));
+            } else {
+              alert(msg);
+            }
+            }
     </script>
 </body>
 </html>
