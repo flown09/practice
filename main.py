@@ -256,6 +256,25 @@ async def fonts_redirect(path: str, request: Request):
     qs = f"?{request.url.query}" if request.url.query else ""
     return RedirectResponse(url=f"{PROXY_PREFIX}/fonts/{path}{qs}", status_code=307)
 
+from fastapi.responses import RedirectResponse
+
+def _with_qs(request: Request, url: str) -> str:
+    return url + (f"?{request.url.query}" if request.url.query else "")
+
+@app.api_route("/admin/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+async def admin_redirect(path: str, request: Request):
+    return RedirectResponse(_with_qs(request, f"{PROXY_PREFIX}/admin/{path}"), status_code=307)
+
+@app.api_route("/idsrv/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+async def idsrv_redirect(path: str, request: Request):
+    return RedirectResponse(_with_qs(request, f"{PROXY_PREFIX}/idsrv/{path}"), status_code=307)
+
+# на всякий случай — BI API часто ходит сюда
+@app.api_route("/corelogic/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+async def corelogic_redirect(path: str, request: Request):
+    return RedirectResponse(_with_qs(request, f"{PROXY_PREFIX}/corelogic/{path}"), status_code=307)
+
+
 @app.get("/favicon.ico")
 async def favicon_redirect():
     return RedirectResponse(url=f"{PROXY_PREFIX}/dist/favicon.ico", status_code=307)
