@@ -66,6 +66,8 @@ def build_final_excel_from_parse_bytes(
     else:
         lpu["__code__"] = None
 
+    ticket_by_code, ticket_by_name = load_ticket_maps(settings.excel_path_ticket)
+
     # 3) чистим имена (как в твоём коде)
     df[0] = df[0].apply(_clean_name)
     lpu["__name__"] = lpu["__name__"].apply(_clean_name)
@@ -153,14 +155,73 @@ def build_final_excel_from_parse_bytes(
             # 2) проценты (если в шаблоне уже есть — не трогаем; если пусто — проставим)
             ensure_formula(ws, f"E{row}", f"=D{row}/C{row}")
             ensure_formula(ws, f"G{row}", f"=F{row}/C{row}")
-            ensure_formula(ws, f"H{row}", f"=F{row}/(F{row}+K{row}+M{row})")
+            ensure_formula(ws, f"H{row}", f"=IF(F{row}<>0,F{row}/(F{row}+K{row}+M{row}),0)")
             ensure_formula(ws, f"J{row}", f"=I{row}/C{row}")
             ensure_formula(ws, f"L{row}", f"=K{row}/C{row}")
             ensure_formula(ws, f"N{row}", f"=M{row}/C{row}")
             ensure_formula(ws, f"P{row}", f"=O{row}/C{row}")
 
+            code_key = norm_id(lpu["__code__"][i])  # РМИС ID (если есть)
+            vals = None
+
+            if code_key:
+                vals = ticket_by_code.get(code_key)
+
+            if vals is None:
+                # fallback по имени (на случай если кода нет/не совпал формат)
+                vals = ticket_by_name.get(nm)
+
+            if vals:
+                portal_all, total, total_all = vals
+                ws[f"Q{row}"] = nz(portal_all)  # Выложено на ЕПГУ (конкурентные)
+                ws[f"R{row}"] = nz(total)  # Общее количество талонов
+                ws[f"S{row}"] = nz(total_all)  # Общее количество талонов (все интервалы)
+            else:
+                # если не нашли — можно оставить как есть, либо поставить 0
+                ws[f"Q{row}"] = nz(ws[f"Q{row}"].value)
+                ws[f"R{row}"] = nz(ws[f"R{row}"].value)
+                ws[f"S{row}"] = nz(ws[f"S{row}"].value)
+
+            # формулы процентов по этим колонкам (обычно в шаблоне уже есть)
+            ensure_formula(ws, f"T{row}", f"=Q{row}/R{row}")
+            #ensure_formula(ws, f"W{row}", f"=Q{row}/V{row}")
+
     wb.save(output_xlsx_path)
     return output_xlsx_path
+
+def norm_id(v):
+    if v is None:
+        return None
+    # Excel часто отдаёт числа как float
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    return str(v).strip()
+
+def load_ticket_maps(ticket_xlsx_path: str):
+    """
+    Возвращает 2 словаря:
+      by_code:  RMIS_ID -> (portal_all, total, total_all)
+      by_name:  cleaned_name -> (portal_all, total, total_all)
+    """
+    wb_t = load_workbook(ticket_xlsx_path, data_only=True)
+    ws_t = wb_t["Лист 1"]
+
+    by_code = {}
+    by_name = {}
+
+    for r in range(1, ws_t.max_row + 1):
+        code = norm_id(ws_t[f"B{r}"].value)            # у тебя там обычно РМИС ID
+        name_clean = _clean_name(ws_t[f"A{r}"].value)  # если в A есть название МО
+        portal_all = ws_t[f"C{r}"].value               # PORTAL_ALL
+        total = ws_t[f"D{r}"].value                    # TOTAL
+        total_all = ws_t[f"E{r}"].value                # TOTAL_ALL
+
+        if code:
+            by_code[code] = (portal_all, total, total_all)
+        if name_clean:
+            by_name[name_clean] = (portal_all, total, total_all)
+
+    return by_code, by_name
 
 
 
