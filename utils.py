@@ -3,7 +3,7 @@ import requests
 import re
 import json
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, date
 import pandas as pd
 import warnings
 from isoweek import Week
@@ -18,6 +18,27 @@ from isoweek import Week
 
 warnings.filterwarnings('ignore')
 cancelLPU = pd.DataFrame()
+
+def get_prev_week_sheet_name(today: date | None = None) -> str:
+    """
+    Возвращает строку 'YYYY-MM-DD - YYYY-MM-DD' для прошлой ISO-недели.
+    Пример: если сегодня 2026-02-17, вернёт '2026-02-09 - 2026-02-15'
+    """
+    today = today or date.today()
+    iso = today.isocalendar()
+    year = iso[0]
+    week = iso[1]
+
+    if week == 1:
+        prev_year = year - 1
+        prev_week = date(prev_year, 12, 28).isocalendar()[1]  # последняя ISO-неделя года
+    else:
+        prev_year = year
+        prev_week = week - 1
+
+    monday = date.fromisocalendar(prev_year, prev_week, 1)
+    sunday = date.fromisocalendar(prev_year, prev_week, 7)
+    return f"{monday:%Y-%m-%d} - {sunday:%Y-%m-%d}"
 
 
 def _clean_name(s: str) -> str:
@@ -44,7 +65,7 @@ def build_final_excel_from_parse_bytes(
     lpu_path: str,
     template_xlsx_path: str,
     output_xlsx_path: str,
-    sheet_name: str = "Лист 1",
+    sheet_name: str = "Образец Новый",
 ):
     # 1) читаем parse.json
     df = pd.read_json(io.BytesIO(parse_bytes))
@@ -122,9 +143,39 @@ def build_final_excel_from_parse_bytes(
     d = f"{Week(date.year, (iso[1]-1)).monday()} - {Week(date.year, (iso[1]-1)).sunday()}"
 
     # 6) открываем шаблон и заполняем
+    # wb = load_workbook(template_xlsx_path)
+    # ws = wb[sheet_name]
+    # ws['C1'] = str(d)
     wb = load_workbook(template_xlsx_path)
-    ws = wb[sheet_name]
-    ws['C1'] = str(d)
+
+    # имя листа для прошлой недели
+    week_sheet = get_prev_week_sheet_name()
+
+    # если уже есть такой лист (перезапуск) — удаляем
+    if week_sheet in wb.sheetnames:
+        del wb[week_sheet]
+
+    # копируем лист-шаблон в новый лист недели
+    if sheet_name not in wb.sheetnames:
+        raise ValueError(f"Лист-шаблон '{sheet_name}' не найден. Есть: {wb.sheetnames}")
+
+    base_ws = wb[sheet_name]
+    ws = wb.copy_worksheet(base_ws)
+    ws.title = week_sheet
+
+    # в шаблоне в B1 обычно "Отчетная неделя:", а в C1 ставим диапазон
+    ws["C1"] = week_sheet
+
+    # гарантируем видимость (на всякий случай)
+    ws.sheet_state = "visible"
+
+    # переместим лист сразу после "Свод (без черновиков)" (или просто на 3-е место)
+    try:
+        wb._sheets.remove(ws)
+        wb._sheets.insert(2, ws)  # 0=первый лист, 1=второй, 2=третий
+        wb.active = 2
+    except Exception:
+        pass
 
     # тот же алгоритм сопоставления (у тебя было 0..90)
     # сделаем аккуратно: до 90 или до конца lpu
