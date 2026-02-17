@@ -16,6 +16,9 @@ import pandas as pd
 from openpyxl import load_workbook
 from isoweek import Week
 
+from threading import Lock
+_I38_LOCK = Lock()
+
 warnings.filterwarnings('ignore')
 cancelLPU = pd.DataFrame()
 
@@ -237,8 +240,22 @@ def build_final_excel_from_parse_bytes(
             ensure_formula(ws, f"T{row}", f"=Q{row}/R{row}")
             #ensure_formula(ws, f"W{row}", f"=Q{row}/V{row}")
 
+    # 1) сохраняем финальный файл (для скачивания)
     wb.save(output_xlsx_path)
+
+    # 2) ОБНОВЛЯЕМ ФАЙЛ В ПРОЕКТЕ (и38 таблица МИАЦ.xlsx)
+    #    чтобы в нём тоже появился новый лист недели
+    with _I38_LOCK:
+        try:
+            wb.save(template_xlsx_path)
+        except PermissionError as e:
+            # чаще всего: файл открыт в Excel на сервере
+            print(f"[WARN] Не удалось обновить шаблон {template_xlsx_path}: {e}")
+        except Exception as e:
+            print(f"[WARN] Ошибка при обновлении шаблона {template_xlsx_path}: {e}")
+
     return output_xlsx_path
+
 
 def norm_id(v):
     if v is None:

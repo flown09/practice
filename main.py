@@ -20,7 +20,6 @@ from pathlib import Path
 from utils import build_final_excel_from_parse_bytes  # если положил туда
 
 
-
 app = FastAPI(title="MIAC Report Service")
 templates = Jinja2Templates(directory="templates")
 
