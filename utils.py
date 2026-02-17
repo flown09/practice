@@ -9,9 +9,131 @@ import warnings
 from isoweek import Week
 from openpyxl import load_workbook
 from config import settings
+import io
+import warnings
+import datetime
+import pandas as pd
+from openpyxl import load_workbook
+from isoweek import Week
 
 warnings.filterwarnings('ignore')
 cancelLPU = pd.DataFrame()
+
+
+def _clean_name(s: str) -> str:
+    if s is None:
+        return ""
+    return ''.join(filter(str.isalnum, str(s))).lower()
+
+
+def build_final_excel_from_parse_bytes(
+    parse_bytes: bytes,
+    lpu_path: str,
+    template_xlsx_path: str,
+    output_xlsx_path: str,
+    sheet_name: str = "Лист 1",
+):
+    # 1) читаем parse.json
+    df = pd.read_json(io.BytesIO(parse_bytes))
+    df = df.dropna().reset_index(drop=True)
+
+    # 2) читаем lpu.xlsx
+    lpu = pd.read_excel(lpu_path)
+
+    # поддержка разных названий колонок (на всякий случай)
+    # твой парсер ожидает: lpu['name'] и lpu['Код']
+    if "name" not in lpu.columns:
+        # если у тебя колонка называется "Наменование МО" — подхватим
+        if "Наменование МО" in lpu.columns:
+            lpu["name"] = lpu["Наменование МО"]
+        else:
+            raise ValueError("В lpu.xlsx нет колонки 'name' или 'Наменование МО'")
+
+    if "Код" not in lpu.columns:
+        # если вдруг код называется иначе — тут можно расширить
+        # но лучше чтобы в файле был столбец 'Код'
+        raise ValueError("В lpu.xlsx нет колонки 'Код'")
+
+    # 3) чистим имена (как в твоём коде)
+    df[0] = df[0].apply(_clean_name)
+    lpu["name"] = lpu["name"].apply(_clean_name)
+
+    # 4) собираем df2 (как у тебя)
+    df2 = pd.DataFrame(columns=[
+        'Наменование МО','Код МО','Количество попыток записаться через ЕПГУ','Черновики',
+        'Успешные записи','Ошибки все','Орг. ошибки','Тех. Ошибки','Ошибки фед. уровня',
+        'Общее количество талонов','Общее количество талонов (все интервалы)','Выложено на ЕПГУ',
+    ])
+
+    def _val(cell):
+        # cell примерно: ["ТЕКСТ МЕТРИКИ", [число]]
+        try:
+            return cell[1][0]
+        except Exception:
+            return 0
+
+    # чтобы не делать двойной цикл len(df)*len(lpu), делаем словарь (логика та же)
+    lpu_map = {lpu["name"][i]: (lpu["name"][i], lpu["Код"][i]) for i in range(len(lpu))}
+
+    for i in range(len(df)):
+        key = df[0][i]
+        if key in lpu_map:
+            name_clean, code = lpu_map[key]
+
+            # индексы колонок 1..6 как в твоём коде
+            chern = _val(df[1][i])
+            osh_all = _val(df[2][i])
+            org_osh = _val(df[3][i])
+            teh_osh = _val(df[4][i])
+            usp = _val(df[5][i])
+            fed = _val(df[6][i])
+
+            tries = chern + osh_all + org_osh + teh_osh + usp
+
+            df2 = pd.concat([df2, pd.DataFrame([{
+                'Наменование МО': name_clean,
+                'Код МО': code,
+                'Количество попыток записаться через ЕПГУ': tries,
+                'Черновики': chern,
+                'Успешные записи': usp,
+                'Ошибки все': osh_all,
+                'Орг. ошибки': org_osh,
+                'Тех. Ошибки': teh_osh,
+                'Ошибки фед. уровня': fed,
+            }])], ignore_index=True)
+
+    # 5) период прошлой недели (как у тебя)
+    date = datetime.date.today()
+    iso = date.isocalendar()
+    d = f"{Week(date.year, (iso[1]-1)).monday()} - {Week(date.year, (iso[1]-1)).sunday()}"
+
+    # 6) открываем шаблон и заполняем
+    wb = load_workbook(template_xlsx_path)
+    ws = wb[sheet_name]
+    ws['C1'] = str(d)
+
+    # тот же алгоритм сопоставления (у тебя было 0..90)
+    # сделаем аккуратно: до 90 или до конца lpu
+    limit = min(90, len(lpu))
+
+    # быстрый доступ: имя -> строка df2
+    df2_map = {df2['Наменование МО'][i].lower(): i for i in range(len(df2))}
+
+    for i in range(limit):
+        nm = lpu["name"][i].lower()
+        if nm in df2_map:
+            c = df2_map[nm]
+            row = i + 4
+            ws[f'D{row}'] = df2['Черновики'][c]
+            ws[f'F{row}'] = df2['Успешные записи'][c]
+            ws[f'I{row}'] = df2['Ошибки все'][c]
+            ws[f'K{row}'] = df2['Орг. ошибки'][c]
+            ws[f'M{row}'] = df2['Тех. Ошибки'][c]
+            ws[f'O{row}'] = df2['Ошибки фед. уровня'][c]
+
+    wb.save(output_xlsx_path)
+    return output_xlsx_path
+
 
 
 def get_last_week_dates():

@@ -13,6 +13,12 @@ from pathlib import Path
 import zipfile
 import tempfile
 from fastapi.responses import FileResponse
+import uuid
+from fastapi import UploadFile, File
+from fastapi.concurrency import run_in_threadpool
+from pathlib import Path
+from utils import build_final_excel_from_parse_bytes  # если положил туда
+
 
 
 app = FastAPI(title="MIAC Report Service")
@@ -27,6 +33,55 @@ schedule_config = {
 }
 
 scheduler = None  # Глобальная переменная для текущего планировщика
+
+REPORTS_DIR = Path("reports")
+REPORTS_DIR.mkdir(exist_ok=True)
+
+@app.post("/upload-parse")
+async def upload_parse(file: UploadFile = File(...)):
+    if not file.filename.lower().endswith(".json"):
+        raise HTTPException(400, "Нужен JSON файл (parse.json)")
+
+    parse_bytes = await file.read()
+    upload_id = uuid.uuid4().hex
+
+    # куда сохраняем финальный файл
+    out_path = REPORTS_DIR / f"final_{upload_id}.xlsx"
+
+    # важно: обработка не в async потоке
+    try:
+        await run_in_threadpool(
+            build_final_excel_from_parse_bytes,
+            parse_bytes,
+            settings.lpu_path,        # lpu.xlsx на сервере
+            settings.excel_path,      # шаблон xlsx на сервере (положи сюда "и38 таблица МИАЦ.xlsx" или сделай отдельный setting)
+            str(out_path),
+            "Лист 1"
+        )
+    except Exception as e:
+        raise HTTPException(500, f"Ошибка обработки parse.json: {e}")
+
+    return {
+        "status": "ok",
+        "upload_id": upload_id,
+        "download_url": f"/download-final/{upload_id}"
+    }
+
+
+@app.get("/download-final/{upload_id}")
+async def download_final(upload_id: str):
+    path = REPORTS_DIR / f"final_{upload_id}.xlsx"
+    if not path.exists():
+        raise HTTPException(404, "Файл не найден")
+
+    return FileResponse(
+        path=str(path),
+        filename="финальный_отчет.xlsx",
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+
+
 
 def create_scheduler():
     """Создает и возвращает новый чистый планировщик"""
