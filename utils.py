@@ -70,9 +70,9 @@ def build_final_excel_from_parse_bytes(
     output_xlsx_path: str,
     sheet_name: str = "Образец Новый",
 ):
-    # 1) читаем parse.json
+    # 1) читаем parse.json (как у коллеги)
     df = pd.read_json(io.BytesIO(parse_bytes))
-    df = df.dropna().reset_index(drop=True)
+    df = df.dropna().reset_index()   # ВАЖНО: как в исходном коде (без drop=True)
 
     # 2) читаем lpu.xlsx
     lpu = pd.read_excel(lpu_path)
@@ -83,173 +83,153 @@ def build_final_excel_from_parse_bytes(
     if not name_col:
         raise ValueError(f"В lpu.xlsx не найдена колонка с названием МО. Есть колонки: {list(lpu.columns)}")
 
-    # код не обязателен (в твоём шаблоне ты его вообще не записываешь)
-    lpu["__name__"] = lpu[name_col].apply(_clean_name)
-    if code_col:
-        lpu["__code__"] = lpu[code_col]
-    else:
-        lpu["__code__"] = None
+    # --- НОРМАЛИЗУЕМ ИМЕНА ЧЕРЕЗ for-циклы, как у коллеги ---
+    # df[0][i] = ''.join(filter(str.isalnum, df[0][i])).lower()
+    for i in range(len(df)):
+        df.at[i, 0] = _clean_name(df.at[i, 0])
 
+    # lpu['name'][i] = ''.join(filter(str.isalnum, lpu["name"][i])).lower()
+    lpu_clean = []
+    lpu_codes = []
+    for i in range(len(lpu)):
+        lpu_clean.append(_clean_name(lpu.at[i, name_col]))
+        lpu_codes.append(lpu.at[i, code_col] if code_col else None)
+
+    # запишем в служебные колонки (удобно дальше)
+    lpu["__name__"] = lpu_clean
+    lpu["__code__"] = lpu_codes
+
+    # 3) подтягиваем данные по талонам (Q/R/S) из miac_table.xlsx
     ticket_by_code, ticket_by_name = load_ticket_maps(settings.excel_path_ticket)
 
-    # 3) чистим имена (как в твоём коде)
-    df[0] = df[0].apply(_clean_name)
-    lpu["__name__"] = lpu["__name__"].apply(_clean_name)
-
-    # 4) собираем df2 (как у тебя)
-    df2 = pd.DataFrame(columns=[
-        'Наменование МО','Код МО','Количество попыток записаться через ЕПГУ','Черновики',
-        'Успешные записи','Ошибки все','Орг. ошибки','Тех. Ошибки','Ошибки фед. уровня',
-        'Общее количество талонов','Общее количество талонов (все интервалы)','Выложено на ЕПГУ',
-    ])
-
-    def _val(cell):
-        # cell примерно: ["ТЕКСТ МЕТРИКИ", [число]]
+    # 4) собираем df2 максимально похоже:
+    # for i in range(len(df)):
+    #   for c in range(len(lpu)):
+    #     if df[0][i] == lpu['name'][c]:
+    #        append(...)
+    rows = []
+    def getv(col_idx, row_idx):
+        # аналог df[col][i][1][0], но безопаснее
         try:
-            return cell[1][0]
+            v = df.at[row_idx, col_idx]
+            # ожидаемый формат: ["...", [число]]
+            if isinstance(v, (list, tuple)) and len(v) >= 2:
+                vv = v[1]
+                if isinstance(vv, (list, tuple)) and len(vv) > 0:
+                    return nz(vv[0])
+            return nz(0)
         except Exception:
-            return 0
-
-    # чтобы не делать двойной цикл len(df)*len(lpu), делаем словарь (логика та же)
-    lpu_map = {lpu["__name__"][i]: (lpu["__name__"][i], lpu["__code__"][i]) for i in range(len(lpu))}
+            return nz(0)
 
     for i in range(len(df)):
-        key = df[0][i]
-        if key in lpu_map:
-            name_clean, code = lpu_map[key]
+        name_from_parse = df.at[i, 0]
+        for c in range(len(lpu)):
+            if name_from_parse == lpu_clean[c]:
+                chern = getv(1, i)
+                osh_all = getv(2, i)
+                org_osh = getv(3, i)
+                teh_osh = getv(4, i)
+                usp = getv(5, i)
+                fed = getv(6, i)
 
-            # индексы колонок 1..6 как в твоём коде
-            chern = _val(df[1][i])
-            osh_all = _val(df[2][i])
-            org_osh = _val(df[3][i])
-            teh_osh = _val(df[4][i])
-            usp = _val(df[5][i])
-            fed = _val(df[6][i])
+                rows.append({
+                    "Наменование МО": lpu_clean[c],     # как у коллеги: lpu['name'][c] (уже очищено)
+                    "Код МО": lpu_codes[c],             # может быть None, это ок
+                    "Количество попыток записаться через ЕПГУ": chern + osh_all + org_osh + teh_osh + usp,
+                    "Черновики": chern,
+                    "Успешные записи": usp,
+                    "Ошибки все": osh_all,
+                    "Орг. ошибки": org_osh,
+                    "Тех. Ошибки": teh_osh,
+                    "Ошибки фед. уровня": fed,
+                })
 
-            tries = chern + osh_all + org_osh + teh_osh + usp
+    df2 = pd.DataFrame(rows)
 
-            df2 = pd.concat([df2, pd.DataFrame([{
-                'Наменование МО': name_clean,
-                'Код МО': code,
-                'Количество попыток записаться через ЕПГУ': tries,
-                'Черновики': chern,
-                'Успешные записи': usp,
-                'Ошибки все': osh_all,
-                'Орг. ошибки': org_osh,
-                'Тех. Ошибки': teh_osh,
-                'Ошибки фед. уровня': fed,
-            }])], ignore_index=True)
-
-    # 5) период прошлой недели (как у тебя)
-    date = datetime.date.today()
-    iso = date.isocalendar()
-    d = f"{Week(date.year, (iso[1]-1)).monday()} - {Week(date.year, (iso[1]-1)).sunday()}"
-
-    # 6) открываем шаблон и заполняем
-    # wb = load_workbook(template_xlsx_path)
-    # ws = wb[sheet_name]
-    # ws['C1'] = str(d)
+    # 5) создаём новый лист прошлой недели
     wb = load_workbook(template_xlsx_path)
-
-    # имя листа для прошлой недели
     week_sheet = get_prev_week_sheet_name()
 
-    # если уже есть такой лист (перезапуск) — удаляем
     if week_sheet in wb.sheetnames:
         del wb[week_sheet]
 
-    # копируем лист-шаблон в новый лист недели
     if sheet_name not in wb.sheetnames:
         raise ValueError(f"Лист-шаблон '{sheet_name}' не найден. Есть: {wb.sheetnames}")
 
     base_ws = wb[sheet_name]
     ws = wb.copy_worksheet(base_ws)
     ws.title = week_sheet
-
-    # в шаблоне в B1 обычно "Отчетная неделя:", а в C1 ставим диапазон
     ws["C1"] = week_sheet
-
-    # гарантируем видимость (на всякий случай)
     ws.sheet_state = "visible"
 
-    # переместим лист сразу после "Свод (без черновиков)" (или просто на 3-е место)
+    # перемещаем в начало, чтобы точно было видно
     try:
         wb._sheets.remove(ws)
-        wb._sheets.insert(2, ws)  # 0=первый лист, 1=второй, 2=третий
+        wb._sheets.insert(2, ws)
         wb.active = 2
     except Exception:
         pass
 
-    # тот же алгоритм сопоставления (у тебя было 0..90)
-    # сделаем аккуратно: до 90 или до конца lpu
+    # 6) ЗАПОЛНЕНИЕ ЭКСЕЛЯ — максимально похоже:
+    # for i in range(0,90):
+    #   for c in range(len(df2)):
+    #     if lpu['name'][i] == df2['Наменование МО'][c]:
+    #        ws['D'+...]=...
     limit = min(90, len(lpu))
 
-    # быстрый доступ: имя -> строка df2
-    df2_map = {df2['Наменование МО'][i].lower(): i for i in range(len(df2))}
+    for i in range(0, limit):
+        for c in range(len(df2)):
+            if lpu_clean[i].lower() == str(df2.at[c, "Наменование МО"]).lower():
+                row = i + 4
 
-    for i in range(limit):
-        nm = lpu["__name__"][i].lower()
-        if nm in df2_map:
-            c = df2_map[nm]
-            row = i + 4
-            ws[f'D{row}'] = df2['Черновики'][c]
-            ws[f'F{row}'] = df2['Успешные записи'][c]
-            ws[f'I{row}'] = df2['Ошибки все'][c]
-            ws[f'K{row}'] = df2['Орг. ошибки'][c]
-            ws[f'M{row}'] = df2['Тех. Ошибки'][c]
-            ws[f'O{row}'] = df2['Ошибки фед. уровня'][c]
+                # D/F/I/K/M/O из parse.json
+                ws[f"D{row}"] = nz(df2.at[c, "Черновики"])
+                ws[f"F{row}"] = nz(df2.at[c, "Успешные записи"])
+                ws[f"I{row}"] = nz(df2.at[c, "Ошибки все"])
+                ws[f"K{row}"] = nz(df2.at[c, "Орг. ошибки"])
+                ws[f"M{row}"] = nz(df2.at[c, "Тех. Ошибки"])
+                ws[f"O{row}"] = nz(df2.at[c, "Ошибки фед. уровня"])
 
-            d = nz(ws[f"D{row}"].value)
-            f = nz(ws[f"F{row}"].value)
-            i_val = nz(ws[f"I{row}"].value)
+                # C = D + F + I
+                d_val = nz(ws[f"D{row}"].value)
+                f_val = nz(ws[f"F{row}"].value)
+                i_val = nz(ws[f"I{row}"].value)
+                ws[f"C{row}"] = d_val + f_val + i_val
 
-            # 1) C = D + F + I
-            ws[f"C{row}"] = d + f + i_val
+                # проценты (если формулы уже есть — не трогаем)
+                ensure_formula(ws, f"E{row}", f"=D{row}/C{row}")
+                ensure_formula(ws, f"G{row}", f"=F{row}/C{row}")
+                ensure_formula(ws, f"H{row}", f"=IF(F{row}<>0,F{row}/(F{row}+K{row}+M{row}),0)")
+                ensure_formula(ws, f"J{row}", f"=I{row}/C{row}")
+                ensure_formula(ws, f"L{row}", f"=K{row}/C{row}")
+                ensure_formula(ws, f"N{row}", f"=M{row}/C{row}")
+                ensure_formula(ws, f"P{row}", f"=O{row}/C{row}")
 
-            # 2) проценты (если в шаблоне уже есть — не трогаем; если пусто — проставим)
-            ensure_formula(ws, f"E{row}", f"=D{row}/C{row}")
-            ensure_formula(ws, f"G{row}", f"=F{row}/C{row}")
-            ensure_formula(ws, f"H{row}", f"=IF(F{row}<>0,F{row}/(F{row}+K{row}+M{row}),0)")
-            ensure_formula(ws, f"J{row}", f"=I{row}/C{row}")
-            ensure_formula(ws, f"L{row}", f"=K{row}/C{row}")
-            ensure_formula(ws, f"N{row}", f"=M{row}/C{row}")
-            ensure_formula(ws, f"P{row}", f"=O{row}/C{row}")
+                # Q/R/S из miac_table.xlsx
+                code_key = norm_id(lpu_codes[i])
+                vals = ticket_by_code.get(code_key) if code_key else None
+                if vals is None:
+                    vals = ticket_by_name.get(lpu_clean[i])
 
-            code_key = norm_id(lpu["__code__"][i])  # РМИС ID (если есть)
-            vals = None
+                if vals:
+                    portal_all, total, total_all = vals
+                    ws[f"Q{row}"] = nz(portal_all)
+                    ws[f"R{row}"] = nz(total)
+                    ws[f"S{row}"] = nz(total_all)
 
-            if code_key:
-                vals = ticket_by_code.get(code_key)
+                ensure_formula(ws, f"T{row}", f"=Q{row}/R{row}")
 
-            if vals is None:
-                # fallback по имени (на случай если кода нет/не совпал формат)
-                vals = ticket_by_name.get(nm)
+                # ВАЖНО: как у коллеги — НЕ break, чтобы при дублях перезаписалось последним совпадением
+                # (оставляем без break специально)
 
-            if vals:
-                portal_all, total, total_all = vals
-                ws[f"Q{row}"] = nz(portal_all)  # Выложено на ЕПГУ (конкурентные)
-                ws[f"R{row}"] = nz(total)  # Общее количество талонов
-                ws[f"S{row}"] = nz(total_all)  # Общее количество талонов (все интервалы)
-            else:
-                # если не нашли — можно оставить как есть, либо поставить 0
-                ws[f"Q{row}"] = nz(ws[f"Q{row}"].value)
-                ws[f"R{row}"] = nz(ws[f"R{row}"].value)
-                ws[f"S{row}"] = nz(ws[f"S{row}"].value)
-
-            # формулы процентов по этим колонкам (обычно в шаблоне уже есть)
-            ensure_formula(ws, f"T{row}", f"=Q{row}/R{row}")
-            #ensure_formula(ws, f"W{row}", f"=Q{row}/V{row}")
-
-    # 1) сохраняем финальный файл (для скачивания)
+    # 7) сохраняем финальный файл
     wb.save(output_xlsx_path)
 
-    # 2) ОБНОВЛЯЕМ ФАЙЛ В ПРОЕКТЕ (и38 таблица МИАЦ.xlsx)
-    #    чтобы в нём тоже появился новый лист недели
+    # 8) обновляем файл в проекте (и38 таблица МИАЦ.xlsx)
     with _I38_LOCK:
         try:
             wb.save(template_xlsx_path)
         except PermissionError as e:
-            # чаще всего: файл открыт в Excel на сервере
             print(f"[WARN] Не удалось обновить шаблон {template_xlsx_path}: {e}")
         except Exception as e:
             print(f"[WARN] Ошибка при обновлении шаблона {template_xlsx_path}: {e}")
