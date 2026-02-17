@@ -56,7 +56,7 @@ async def upload_parse(file: UploadFile = File(...)):
             settings.lpu_path,        # lpu.xlsx на сервере
             settings.excel_path,      # шаблон xlsx на сервере (положи сюда "и38 таблица МИАЦ.xlsx" или сделай отдельный setting)
             str(out_path),
-            "Лист 1"
+            "2026-01-26 - 2026-02-01"
         )
     except Exception as e:
         raise HTTPException(500, f"Ошибка обработки parse.json: {e}")

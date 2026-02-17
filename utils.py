@@ -25,6 +25,19 @@ def _clean_name(s: str) -> str:
         return ""
     return ''.join(filter(str.isalnum, str(s))).lower()
 
+def _pick_col(df, candidates):
+    for c in candidates:
+        if c in df.columns:
+            return c
+    return None
+
+def nz(v):
+    return 0 if v is None else v
+
+def ensure_formula(ws, addr, formula):
+    v = ws[addr].value
+    if not (isinstance(v, str) and v.startswith("=")):
+        ws[addr].value = formula
 
 def build_final_excel_from_parse_bytes(
     parse_bytes: bytes,
@@ -40,23 +53,22 @@ def build_final_excel_from_parse_bytes(
     # 2) читаем lpu.xlsx
     lpu = pd.read_excel(lpu_path)
 
-    # поддержка разных названий колонок (на всякий случай)
-    # твой парсер ожидает: lpu['name'] и lpu['Код']
-    if "name" not in lpu.columns:
-        # если у тебя колонка называется "Наменование МО" — подхватим
-        if "Наменование МО" in lpu.columns:
-            lpu["name"] = lpu["Наменование МО"]
-        else:
-            raise ValueError("В lpu.xlsx нет колонки 'name' или 'Наменование МО'")
+    name_col = _pick_col(lpu, ["name", "Наменование МО", "Наименование МО", "МО", "NAME"])
+    code_col = _pick_col(lpu, ["Код", "Код МО", "РМИС ID", "RMIS ID", "CODE"])
 
-    if "Код" not in lpu.columns:
-        # если вдруг код называется иначе — тут можно расширить
-        # но лучше чтобы в файле был столбец 'Код'
-        raise ValueError("В lpu.xlsx нет колонки 'Код'")
+    if not name_col:
+        raise ValueError(f"В lpu.xlsx не найдена колонка с названием МО. Есть колонки: {list(lpu.columns)}")
+
+    # код не обязателен (в твоём шаблоне ты его вообще не записываешь)
+    lpu["__name__"] = lpu[name_col].apply(_clean_name)
+    if code_col:
+        lpu["__code__"] = lpu[code_col]
+    else:
+        lpu["__code__"] = None
 
     # 3) чистим имена (как в твоём коде)
     df[0] = df[0].apply(_clean_name)
-    lpu["name"] = lpu["name"].apply(_clean_name)
+    lpu["__name__"] = lpu["__name__"].apply(_clean_name)
 
     # 4) собираем df2 (как у тебя)
     df2 = pd.DataFrame(columns=[
@@ -73,7 +85,7 @@ def build_final_excel_from_parse_bytes(
             return 0
 
     # чтобы не делать двойной цикл len(df)*len(lpu), делаем словарь (логика та же)
-    lpu_map = {lpu["name"][i]: (lpu["name"][i], lpu["Код"][i]) for i in range(len(lpu))}
+    lpu_map = {lpu["__name__"][i]: (lpu["__name__"][i], lpu["__code__"][i]) for i in range(len(lpu))}
 
     for i in range(len(df)):
         key = df[0][i]
@@ -120,7 +132,7 @@ def build_final_excel_from_parse_bytes(
     df2_map = {df2['Наменование МО'][i].lower(): i for i in range(len(df2))}
 
     for i in range(limit):
-        nm = lpu["name"][i].lower()
+        nm = lpu["__name__"][i].lower()
         if nm in df2_map:
             c = df2_map[nm]
             row = i + 4
@@ -131,13 +143,29 @@ def build_final_excel_from_parse_bytes(
             ws[f'M{row}'] = df2['Тех. Ошибки'][c]
             ws[f'O{row}'] = df2['Ошибки фед. уровня'][c]
 
+            d = nz(ws[f"D{row}"].value)
+            f = nz(ws[f"F{row}"].value)
+            i_val = nz(ws[f"I{row}"].value)
+
+            # 1) C = D + F + I
+            ws[f"C{row}"] = d + f + i_val
+
+            # 2) проценты (если в шаблоне уже есть — не трогаем; если пусто — проставим)
+            ensure_formula(ws, f"E{row}", f"=D{row}/C{row}")
+            ensure_formula(ws, f"G{row}", f"=F{row}/C{row}")
+            ensure_formula(ws, f"H{row}", f"=F{row}/(F{row}+K{row}+M{row})")
+            ensure_formula(ws, f"J{row}", f"=I{row}/C{row}")
+            ensure_formula(ws, f"L{row}", f"=K{row}/C{row}")
+            ensure_formula(ws, f"N{row}", f"=M{row}/C{row}")
+            ensure_formula(ws, f"P{row}", f"=O{row}/C{row}")
+
     wb.save(output_xlsx_path)
     return output_xlsx_path
 
 
 
 def get_last_week_dates():
-    date = datetime.today()
+    date = datetime.datetime.today()
     lol = date.isocalendar()
     return Week(date.year, (lol[1] - 1)).monday().strftime("%d.%m.%Y"), Week(date.year, (lol[1] - 1)).sunday().strftime(
         "%d.%m.%Y")
