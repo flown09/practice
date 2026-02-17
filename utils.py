@@ -325,10 +325,10 @@ def process_lpu(lpu_df: pd.DataFrame, ws, wb, cancel_lpu: pd.DataFrame = None):
                     ws[f'C{row_index}'] = df['PORTAL_ALL'].sum()
                     ws[f'D{row_index}'] = df['TOTAL'].sum()
                     ws[f'E{row_index}'] = df['TOTAL_ALL'].sum()
-                    ws[f'F{row_index}'] = datetime.today()
+                    ws[f'F{row_index}'] = datetime.datetime.today()
                     break
 
-            wb.save(settings.excel_path)
+            wb.save(settings.excel_path_ticket)
             print(f"[INFO] Сохранено для LPU {lpu_df['РМИС ID'][i]}")
 
         except Exception as e:
@@ -348,7 +348,7 @@ def main_process():
     global cancelLPU
 
     LPU = pd.read_excel(settings.lpu_path)
-    wb_obj = load_workbook(settings.excel_path)
+    wb_obj = load_workbook(settings.excel_path_ticket)
     ws = wb_obj["Лист 1"]
 
     start_time = time.time()
@@ -362,7 +362,7 @@ def main_process():
     print("[INFO] Основная обработка...")
     process_lpu(LPU, ws, wb_obj, cancelLPU)
 
-    wb_obj.save(settings.excel_path)
+    wb_obj.save(settings.excel_path_ticket)
     duration = time.time() - start_time
     print(f"[INFO] Обработка завершена за {duration:.2f} сек")
     return duration
