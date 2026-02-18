@@ -199,7 +199,7 @@ def build_final_excel_from_parse_bytes(
                 # проценты (если формулы уже есть — не трогаем)
                 ensure_formula(ws, f"E{row}", f"=D{row}/C{row}")
                 ensure_formula(ws, f"G{row}", f"=F{row}/C{row}")
-                ensure_formula(ws, f"H{row}", f"=IF(F{row}<>0,F{row}/(F{row}+K{row}+M{row}),0)")
+                ws[f"H{row}"].value = f"=IF(F{row}<>0,F{row}/(F{row}+K{row}+M{row}),0)"
                 ensure_formula(ws, f"J{row}", f"=I{row}/C{row}")
                 ensure_formula(ws, f"L{row}", f"=K{row}/C{row}")
                 ensure_formula(ws, f"N{row}", f"=M{row}/C{row}")
