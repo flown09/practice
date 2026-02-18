@@ -1,3 +1,6 @@
+console.log("[dash-ext] sd.js loaded");
+window.__dashExtLoaded = true;
+
 const BODYS = [
 ['{"QueryType":"GetOlapData+Query","OlapSettings":{"olapGroups":[{"measures":[],"attributeGroupsInRows":[],"attributeGroupsInColumns":[],"filters":[[{"selectedFilterValues":{"Values":[["Челябинская область"]],"Range":{"Min":null,"Max":null},"UseRange":false,"UseExcluding":false},"attribute":{"id":"Subekt_RF","dimensionOrDimensionRoleId":{"type":"DimensionIdDto","kind":"DimensionIdDto","value":"db3_new_fer_quality"}}},{"selectedFilterValues":{"Values":[["ORG"]],"Range":{"Min":null,"Max":null},"UseRange":false,"UseExcluding":false},"attribute":{"id":"sp","dimensionOrDimensionRoleId":{"type":"DimensionIdDto","kind":"DimensionIdDto","value":"db3_new_fer_quality"}}}]],"dateRangeFilters":[{"start":{"type":0,"fixedDateRange":{"date":"DSTARTT00:00:00.000Z"},"relativeDateRange":{"offsetPeriod":0,"dateStartingPointType":1,"relativeDateRangeType":1,"offset":0}},"end":{"type":0,"fixedDateRange":{"date":"DSTOPT00:00:00.000Z"},"relativeDateRange":{"offsetPeriod":0,"dateStartingPointType":1,"relativeDateRangeType":1,"offset":0}},"dimensionOrDimensionRoleId":{"type":"DimensionRoleIdDto","kind":"DimensionRoleIdDto","value":"Data"}}],"calculatedMeasures":[{"name":"ч","expression":"[Kolichestvo_chernovikov]","sort":0,"aggregator":1}],"id":"e7a56ae1d48c4fd9816ee80f7ed8f1cf","measureGroupId":"db3_sp_znp_fer_quality","rowTotal":false,"columnTotal":false,"showAllDimensionValues":false}],"databaseId":"Indeks","limit":{"rowsLimit":10000,"columnsLimit":50}},"CalculationQueries":[],"AdditionalLogs":{"widgetGuid":"8608ab7565b645f98fe9ad899797acbe","dashboardGuid":"8d82093225eb470595ae4d49d2edc555","sheetGuid":"75e7b48008b34db482c350b2333e2d45"},"WidgetGuid":"8608ab7565b645f98fe9ad899797acbe"}', 'ПОПЫТОК ЗАПИСИ, прерванных пользователями'
 ],
@@ -26,31 +29,27 @@ var options = {
 	body: "body",
 };
 
-function sleep(milliseconds) {       
-    const date = Date.now();        
-    let currentDate = null;       
-    do {               
-       currentDate = Date.now();      
-    } while (currentDate - date < milliseconds); 
-} 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 var url = ["https://info-bi-db.egisz.rosminzdrav.ru/corelogic/api/query"];
 
 function writeFile(name, value) {
   var val = value;
+  if (value === undefined) val = "";
 
-  if (value === undefined) {
-    val = "";
-  }
-  
-  var download = document.createElement("a");
-  download.href = "data:text/plain;content-disposition=attachment;filename=file," + val;
-  download.download = name;
-  download.style.display = "none";
-  download.id = "download"; document.body.appendChild(download);
-  document.getElementById("download").click();
-  document.body.removeChild(download);
+  window.postMessage(
+    {
+      __from: "dashbord-ext",
+      type: "DOWNLOAD_JSON",
+      filename: name,
+      text: String(val)
+    },
+    window.location.origin
+  );
 }
+
 
 async function getReq(o, dStart, dStop) {
 	var token = JSON.parse(sessionStorage.getItem('oidc.user:/idsrv:DashboardsApp'))["access_token"];
@@ -66,182 +65,137 @@ async function getReq(o, dStart, dStop) {
 
 		console.log(options);
 		req.push(fetch(url, options).then(response => response.json()));
-		sleep(50);
+		await delay(50);
 	}
-	
+
 	return req;
 }
 
-function addB (container) {
-	// let container = document.createElement("div");
-	// container.innerText = "АВТО";
-	// container.className = "rb-filter-cancel-button button";
-	
-	// document.getElementsByTagName('iframe')[0].contentWindow.document.getElementsByClassName("rb-actions-buttons-container")[1].append(container);
-	
-	// alert("Готово, кнопка добавлена");
-	
-	container.addEventListener('click', function() {
-		var token = JSON.parse(sessionStorage.getItem('oidc.user:/idsrv:DashboardsApp'))["access_token"];
-		var org = [];
-		
-		options["body"] = _ORG_;
-		options["headers"]["Authorization"] = 'Bearer ' + token;
-		
-		(async () => {
-			var result = await fetch(url, options);
-			var o = await result.json();
-			
-			for (var i = 0; i < o["result"]["dataFrame"]["rows"].length; i++) {
-				org.push(o["result"]["dataFrame"]["rows"][i][0]);
-			}
-		// })();
-		
-			// var l = document.getElementsByTagName('iframe')[0].contentWindow.document.getElementsByClassName("rb-filter-list-container")[1].getElementsByClassName("rb-filter-list-item-text").length;
-			var l = org.length;
-			
-			// for (var i = 0; i < l; i++) {
-				// org.push(document.getElementsByTagName('iframe')[0].contentWindow.document.getElementsByClassName("rb-filter-list-container")[1].getElementsByClassName("rb-filter-list-item-text")[i].textContent);
-			// }
-			
-			var loop = 10;
-			var result = [];
-			
-			var dStart = document.getElementsByTagName('iframe')[0].contentWindow.document.getElementsByClassName("datepicker-here va-date-filter")[0].value.split("-")[0].trim().split(".");
-			dStart = dStart[2] + "-" + dStart[1] + "-" + dStart[0];
-			var dStop = document.getElementsByTagName('iframe')[0].contentWindow.document.getElementsByClassName("datepicker-here va-date-filter")[0].value.split("-")[1].trim().split(".");
-			dStop = dStop[2] + "-" + dStop[1] + "-" + dStop[0];
+async function startJob() {
+  if (__started) return;
+  __started = true;
 
-			// l = 2;
+  await waitUntilReady();
 
-			for (var i = 0; i < l; i++) {
-				document.getElementsByTagName('iframe')[0].contentWindow.document.getElementsByClassName("va-widget-body-container")[21].getElementsByTagName("div")[1].innerText = "ПРОГРЕСС: " + (i + 1) + "/" + l;
+  var token = JSON.parse(sessionStorage.getItem('oidc.user:/idsrv:DashboardsApp'))["access_token"];
+  var org = [];
 
-				var response1 = [];
-				response1.push(org[i]);
-				o = replaceAll(org[i], '"', '\\"');
-			    // o = org[i];
-			  
-			    res = await getReq(o, dStart, dStop);
-			  
-				for (var x = 0; x < loop; x++) {
-					var st = false;
-					var r = await Promise.all(res);
-					console.log(r);
-					
-					for (var w = 0; w < r.length; w++) {
-						if (r[w]["hasError"]) {
-							// debugger;
-							
-							if (loop - 1 == x) {
-								response1.push([BODYS[w][1], r[w]["errorMessage"]]);
-								//console.log(response1);
-							} else {
-								response1 = [];
-								response1.push(org[i])
-								res = await getReq(o, dStart, dStop);
-								break;
-							}
-						} else {
-							response1.push([BODYS[w][1], r[w]["result"]["dataFrame"]["values"][0]]);
-							st = true;
-							//break;
-						}
-					}
-					
-					console.log(response1);
-					
-					if (st) {
-						break;
-					}
-				}
-			  
-			result.push(response1);
-			console.log(JSON.stringify(result));
-			
-			if (i == l - 1) {
-				writeFile('parse.json',  await JSON.stringify(result));
-				//writeFile('date.txt', dStart + " " + dStop)
-				alert("Работа завершена");
-			}
-		  }
-	  })();
-	}, false);
-	container.dataset.handlerReady = '1';
+  options["body"] = _ORG_;
+  options["headers"]["Authorization"] = 'Bearer ' + token;
+
+  (async () => {
+    var result = await fetch(url, options);
+    var o = await result.json();
+
+    for (var i = 0; i < o["result"]["dataFrame"]["rows"].length; i++) {
+      org.push(o["result"]["dataFrame"]["rows"][i][0]);
+    }
+
+    var l = org.length;
+    var loop = 10;
+    var resultAll = [];
+
+    var dashDoc = document.getElementsByTagName('iframe')[0].contentWindow.document;
+
+    var dStart = dashDoc.getElementsByClassName("datepicker-here va-date-filter")[0].value
+      .split("-")[0].trim().split(".");
+    dStart = dStart[2] + "-" + dStart[1] + "-" + dStart[0];
+
+    var dStop = dashDoc.getElementsByClassName("datepicker-here va-date-filter")[0].value
+      .split("-")[1].trim().split(".");
+    dStop = dStop[2] + "-" + dStop[1] + "-" + dStop[0];
+
+    for (var i = 0; i < l; i++) {
+      // прогресс (если виджет поменяют — просто не сработает, но job продолжит)
+      try {
+        dashDoc.getElementsByClassName("va-widget-body-container")[21]
+          .getElementsByTagName("div")[1].innerText = "ПРОГРЕСС: " + (i + 1) + "/" + l;
+      } catch {}
+
+      var response1 = [];
+      response1.push(org[i]);
+      let orgEsc = replaceAll(org[i], '"', '\\"');
+
+      var res = await getReq(orgEsc, dStart, dStop);
+
+      for (var x = 0; x < loop; x++) {
+        var st = false;
+        var r = await Promise.all(res);
+
+        for (var w = 0; w < r.length; w++) {
+          if (r[w]["hasError"]) {
+            if (loop - 1 == x) {
+              response1.push([BODYS[w][1], r[w]["errorMessage"]]);
+            } else {
+              response1 = [];
+              response1.push(org[i]);
+              res = await getReq(orgEsc, dStart, dStop);
+              break;
+            }
+          } else {
+            response1.push([BODYS[w][1], r[w]["result"]["dataFrame"]["values"][0]]);
+            st = true;
+          }
+        }
+
+        if (st) break;
+      }
+
+      resultAll.push(response1);
+
+      if (i == l - 1) {
+        writeFile('parse.json', JSON.stringify(resultAll));
+        alert("Работа завершена");
+      }
+    }
+  })();
 }
+
 
 function checkLoad(container) {
 	// debugger;
 	if (document.getElementsByTagName('iframe')[0].contentWindow.document.getElementsByClassName("rb-actions-buttons-container")[1] != undefined) {
-		if (document.getElementsByTagName('iframe')[0].contentWindow.document.getElementsByClassName("rb-actions-buttons-container")[1].getElementsByClassName("rb-filter-cancel-button button")[1] == undefined) {			
+		if (document.getElementsByTagName('iframe')[0].contentWindow.document.getElementsByClassName("rb-actions-buttons-container")[1].getElementsByClassName("rb-filter-cancel-button button")[1] == undefined) {
 			document.getElementsByTagName('iframe')[0].contentWindow.document.getElementsByClassName("rb-actions-buttons-container")[1].append(container);
 		}
-	}	
+	}
 }
 
 function replaceAll(string, search, replace) {
   return string.split(search).join(replace);
 }
 
-const OIDC_KEY = 'oidc.user:/idsrv:DashboardsApp';
-const AUTORUN_KEY = 'dashbord_autorun_done_v1';
+let __started = false;
 
-function delay(ms) {
-  return new Promise(r => setTimeout(r, ms));
-}
-
-function getAccessToken() {
-  try {
-    const raw = sessionStorage.getItem(OIDC_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw)?.access_token || null;
-  } catch (e) {
-    return null;
+async function waitUntilReady() {
+  // ждём token
+  for (let i = 0; i < 240; i++) { // ~120 секунд
+    try {
+      const raw = sessionStorage.getItem('oidc.user:/idsrv:DashboardsApp');
+      if (raw) {
+        const t = JSON.parse(raw)["access_token"];
+        if (t) break;
+      }
+    } catch {}
+    await delay(500);
   }
-}
 
-function dashboardReady() {
-  const iframe = document.getElementsByTagName('iframe')[0];
-  if (!iframe || !iframe.contentWindow || !iframe.contentWindow.document) return false;
-
-  const doc = iframe.contentWindow.document;
-  // признаки, что дашборд уже загрузился (можете поменять селекторы под себя)
-  return !!doc.querySelector('.datepicker-here.va-date-filter')
-      && (doc.getElementsByClassName("rb-actions-buttons-container")[1] !== undefined);
-}
-
-// ждём: 1) токен есть 2) дашборд готов 3) обработчик клика уже повешен
-async function autorunWhenReady(container) {
-  if (sessionStorage.getItem(AUTORUN_KEY) === '1') return;
-
-  // подождём до ~3 минут
-  for (let i = 0; i < 180; i++) {
-    const token = getAccessToken();
-    const ready = dashboardReady();
-    const handlerReady = container?.dataset?.handlerReady === '1';
-
-    if (token && ready && handlerReady) {
-      sessionStorage.setItem(AUTORUN_KEY, '1');
-      // запускаем тот же код, что на кнопке
-      container.click();
-      return;
-    }
-    await delay(1000);
+  // ждём iframe + поле дат
+  for (let i = 0; i < 240; i++) {
+    try {
+      const frame = document.getElementsByTagName('iframe')[0];
+      const d = frame?.contentWindow?.document;
+      const dateEl = d?.getElementsByClassName("datepicker-here va-date-filter")?.[0];
+      if (d && dateEl && dateEl.value && dateEl.value.includes("-")) return;
+    } catch {}
+    await delay(500);
   }
+
+  throw new Error("Dashboard not ready (iframe/date/token timeout)");
 }
 
 
-window.onload = function() {
-	var t = 5000;
-	
-	var container = document.createElement("div");
-	container.innerText = "АВТО";
-	container.className = "rb-filter-cancel-button button";
-			
-	for (var i = 0; i < 100; i++) {
-		setTimeout(checkLoad, t, container);
-		t += 500;
-	}
-
-	autorunWhenReady(container);
+window.onload = function () {
+  // автозапуск
+  startJob().catch(console.error);
 };

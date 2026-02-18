@@ -1,9 +1,12 @@
 {
-  "manifest_version" : 3,
+  "manifest_version": 3,
   "name": "Dashbord",
-  "version": "1.0",
+  "version": "1.1",
   "description": "Плагин для дашборда",
-  "permissions": ["activeTab"],
+  "permissions": ["activeTab", "downloads"],
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
       "matches": ["https://info-bi-db.egisz.rosminzdrav.ru/*"],
@@ -11,12 +14,13 @@
       "run_at": "document_end"
     }
   ],
-  "web_accessible_resources": [{
-    "resources": ["sd.js"],
-    "matches": ["<all_urls>"],
-    "extension_ids": []
-  }],
-  "icons": { 
+  "web_accessible_resources": [
+    {
+      "resources": ["sd.js"],
+      "matches": ["https://info-bi-db.egisz.rosminzdrav.ru/*"]
+    }
+  ],
+  "icons": {
     "16": "img/icon16.png",
     "48": "img/icon48.png",
     "128": "img/icon128.png"
