@@ -1,17 +1,12 @@
-// 1) инжект sd.js в контекст страницы
-const script = document.createElement("script");
-script.src = chrome.runtime.getURL("sd.js");
-script.type = "text/javascript";
-(document.head || document.documentElement).appendChild(script);
+console.log("[dash-ext] content script loaded");
 
-// 2) мост: sd.js (page) -> content script -> background
 window.addEventListener("message", (event) => {
-  // сообщения должны быть от текущего окна и с нашего origin
   if (event.source !== window) return;
-  if (event.origin !== window.location.origin) return;
 
   const data = event.data;
   if (!data || data.__from !== "dashbord-ext") return;
+
+  console.log("[dash-ext] got window message:", data);
 
   if (data.type === "DOWNLOAD_JSON") {
     chrome.runtime.sendMessage(
@@ -21,10 +16,15 @@ window.addEventListener("message", (event) => {
         text: data.text
       },
       () => {
-        // ответ можно игнорировать, но при желивании — логировать ошибки
         const err = chrome.runtime.lastError?.message;
-        if (err) console.error("runtime message error:", err);
+        if (err) console.error("[dash-ext] runtime message error:", err);
+        else console.log("[dash-ext] message sent to background ok");
       }
     );
   }
 });
+
+chrome.runtime.sendMessage(
+  { type: "DOWNLOAD_JSON", filename: "cs-test.json", text: '{"from":"content-script"}' },
+  (resp) => console.log("[dash-ext] cs-test resp:", resp, chrome.runtime.lastError?.message)
+);
