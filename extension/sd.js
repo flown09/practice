@@ -77,9 +77,6 @@ async function startJob() {
   if (__started) return;
   __started = true;
 
-  writeFile("autostart-test.json", JSON.stringify({ ok: true, time: new Date().toISOString() }));
-  return;
-
   await waitUntilReady();
   console.log("[dash-ext] ready ok");
 
