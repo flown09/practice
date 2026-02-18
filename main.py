@@ -66,6 +66,11 @@ async def upload_parse(file: UploadFile = File(...)):
         "download_url": f"/download-final/{upload_id}"
     }
 
+@app.post("/upload-parse-raw")
+async def upload_parse_raw(file: UploadFile = File(...)):
+    raw = await file.read()
+    return {"status": "ok", "bytes": len(raw), "filename": file.filename}
+
 
 @app.get("/download-final/{upload_id}")
 async def download_final(upload_id: str):

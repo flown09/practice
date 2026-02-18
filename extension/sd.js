@@ -72,7 +72,13 @@ async function getReq(o, dStart, dStop) {
 }
 
 async function startJob() {
-  console.log("[dash-ext] startJob called");
+  console.log("[dash-ext] startJob called (TEST)");
+
+  writeFile(
+    "autostart-test.json",
+    JSON.stringify({ ok: true, time: new Date().toISOString() })
+  );
+  return;
 
   if (__started) return;
   __started = true;
@@ -148,13 +154,19 @@ async function startJob() {
       resultAll.push(response1);
 
       if (i == l - 1) {
-        writeFile('parse.json', JSON.stringify(resultAll));
+        uploadParse(JSON.stringify(resultAll));
         alert("Работа завершена");
       }
     }
   })();
 }
 
+function uploadParse(text) {
+  window.postMessage(
+    { __from: "dashbord-ext", type: "UPLOAD_PARSE", text: String(text) },
+    "*"
+  );
+}
 
 function checkLoad(container) {
 	// debugger;

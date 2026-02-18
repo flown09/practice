@@ -22,6 +22,15 @@ window.addEventListener("message", (event) => {
 
   console.log("[dash-ext] got window message:", data.type);
 
+  if (data.type === "UPLOAD_PARSE") {
+    chrome.runtime.sendMessage({ type: "UPLOAD_PARSE", text: data.text }, (resp) => {
+      const err = chrome.runtime.lastError?.message;
+      const payload = err ? { ok: false, error: err } : resp;
+      window.postMessage({ __from: "dashbord-ext", type: "UPLOAD_RESULT", payload }, "*");
+    });
+  }
+
+
   if (data.type === "DOWNLOAD_JSON") {
     chrome.runtime.sendMessage(
       { type: "DOWNLOAD_JSON", filename: data.filename, text: data.text },
