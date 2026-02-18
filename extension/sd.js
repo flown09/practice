@@ -72,10 +72,24 @@ async function getReq(o, dStart, dStop) {
 }
 
 async function startJob() {
+  console.log("[dash-ext] startJob called (TEST)");
+
+  writeFile(
+    "autostart-test.json",
+    JSON.stringify({ ok: true, time: new Date().toISOString() })
+  );
+  return;
+
+  console.log("[dash-ext] startJob called");
+
   if (__started) return;
   __started = true;
 
+  writeFile("autostart-test.json", JSON.stringify({ ok: true, time: new Date().toISOString() }));
+  return;
+
   await waitUntilReady();
+  console.log("[dash-ext] ready ok");
 
   var token = JSON.parse(sessionStorage.getItem('oidc.user:/idsrv:DashboardsApp'))["access_token"];
   var org = [];
@@ -84,6 +98,7 @@ async function startJob() {
   options["headers"]["Authorization"] = 'Bearer ' + token;
 
   (async () => {
+    console.log("[dash-ext] fetching ORG list...");
     var result = await fetch(url, options);
     var o = await result.json();
 
@@ -168,11 +183,14 @@ function replaceAll(string, search, replace) {
 let __started = false;
 
 async function waitUntilReady() {
+  console.log("[dash-ext] waitUntilReady...");
+
   // ждём token
   for (let i = 0; i < 240; i++) { // ~120 секунд
     try {
       const raw = sessionStorage.getItem('oidc.user:/idsrv:DashboardsApp');
       if (raw) {
+        console.log("[dash-ext] token ok");
         const t = JSON.parse(raw)["access_token"];
         if (t) break;
       }
@@ -186,7 +204,9 @@ async function waitUntilReady() {
       const frame = document.getElementsByTagName('iframe')[0];
       const d = frame?.contentWindow?.document;
       const dateEl = d?.getElementsByClassName("datepicker-here va-date-filter")?.[0];
-      if (d && dateEl && dateEl.value && dateEl.value.includes("-")) return;
+      if (d && dateEl && dateEl.value && dateEl.value.includes("-")) {
+        console.log("[dash-ext] iframe/date ok");
+        return;}
     } catch {}
     await delay(500);
   }
@@ -195,7 +215,18 @@ async function waitUntilReady() {
 }
 
 
-window.onload = function () {
-  // автозапуск
-  startJob().catch(console.error);
-};
+console.log("[dash-ext] sd.js bottom reached");
+
+(function () {
+  const run = () => {
+    console.log("[dash-ext] autostart run()");
+    startJob().catch(console.error);
+  };
+
+  // если страница уже успела загрузиться — стартуем сразу
+  if (document.readyState === "complete") {
+    setTimeout(run, 0);
+  } else {
+    window.addEventListener("load", run, { once: true });
+  }
+})();
