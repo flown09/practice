@@ -33,7 +33,7 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-var url = ["https://info-bi-db.egisz.rosminzdrav.ru/corelogic/api/query"];
+var url = "https://info-bi-db.egisz.rosminzdrav.ru/corelogic/api/query";
 
 function writeFile(name, value) {
   var val = value;
@@ -72,14 +72,6 @@ async function getReq(o, dStart, dStop) {
 }
 
 async function startJob() {
-  console.log("[dash-ext] startJob called (TEST)");
-
-  writeFile(
-    "autostart-test.json",
-    JSON.stringify({ ok: true, time: new Date().toISOString() })
-  );
-  return;
-
   console.log("[dash-ext] startJob called");
 
   if (__started) return;
