@@ -138,21 +138,42 @@
     </div>
 
     <div class="card">
-      <h3>Загрузка parse.json</h3>
+      <h3>Шаблон Excel</h3>
 
-      <input type="file" id="parseFile" accept=".json" />
-      <button type="button" id="uploadParseBtn" style="margin-left:10px;">
-        Загрузить parse.json
-      </button>
-
-      <div id="parseUploadStatus" style="margin-top:10px;"></div>
-
-      <a id="finalDownloadLink" href="#" style="display:none; margin-top:10px;">
-        <button type="button" style="background:#28a745;">
-          Загрузить финальный отчет
+      <div style="margin-bottom:10px;">
+        <input type="file" id="templateFile" accept=".xlsx" />
+        <button type="button" id="uploadTemplateBtn" style="margin-left:10px;">
+          Загрузить новый шаблон
         </button>
-      </a>
+      </div>
+
+      <div id="templateUploadStatus"></div>
+
+      <div style="margin-top:10px;">
+        <a href="/download-template" target="_blank">
+          <button type="button" style="background:#28a745;">Скачать текущий шаблон</button>
+        </a>
+      </div>
+
+      <div id="templateInfo" style="margin-top:10px; font-size:13px; color:#555;"></div>
     </div>
+
+<!--    <div class="card">-->
+<!--      <h3>Загрузка parse.json</h3>-->
+
+<!--      <input type="file" id="parseFile" accept=".json" />-->
+<!--      <button type="button" id="uploadParseBtn" style="margin-left:10px;">-->
+<!--        Загрузить parse.json-->
+<!--      </button>-->
+
+<!--      <div id="parseUploadStatus" style="margin-top:10px;"></div>-->
+
+<!--      <a id="finalDownloadLink" href="#" style="display:none; margin-top:10px;">-->
+<!--        <button type="button" style="background:#28a745;">-->
+<!--          Загрузить финальный отчет-->
+<!--        </button>-->
+<!--      </a>-->
+<!--    </div>-->
 
 
 
@@ -163,6 +184,80 @@
 <!--    </div>-->
 
     <script>
+        // ---- ШАБЛОН: загрузка ----
+        async function refreshTemplateInfo() {
+          const el = document.getElementById("templateInfo");
+          if (!el) return;
+
+          try {
+            const r = await fetch("/template-info");
+            const info = await r.json();
+            if (!info.exists) {
+              el.textContent = "Шаблон не загружен.";
+              return;
+            }
+            el.textContent =
+              `Текущий шаблон: ${info.filename} (${info.size} байт), обновлён: ${info.mtime}` +
+              (info.sheetnames ? ` | листы: ${info.sheetnames.join(", ")}` : "");
+          } catch (e) {
+            el.textContent = "Не удалось получить информацию о шаблоне.";
+          }
+        }
+
+        const uploadTemplateBtn = document.getElementById("uploadTemplateBtn");
+        if (uploadTemplateBtn) {
+          uploadTemplateBtn.onclick = async () => {
+            const input = document.getElementById("templateFile");
+            const status = document.getElementById("templateUploadStatus");
+
+            status.innerHTML = "";
+            if (!input.files || input.files.length === 0) {
+              alert("Выберите .xlsx шаблон");
+              return;
+            }
+
+            const fd = new FormData();
+            fd.append("file", input.files[0]);
+
+            status.innerHTML = "Загрузка шаблона...";
+            const resp = await fetch("/upload-template", { method: "POST", body: fd });
+            const data = await resp.json().catch(() => ({}));
+
+            if (!resp.ok) {
+              status.innerHTML = `<div style="background:#f8d7da;color:#721c24;padding:10px;border-radius:5px;">
+                Ошибка: ${data.detail || "не удалось загрузить шаблон"}
+              </div>`;
+              return;
+            }
+
+            status.innerHTML = `<div class="success">Шаблон обновлён: ${data.filename}</div>`;
+            await refreshTemplateInfo();
+          };
+        }
+
+        refreshTemplateInfo();
+
+
+        // ---- FIX: если блок parse.json закомментирован — не вешаем обработчик ----
+        const uploadParseBtn = document.getElementById("uploadParseBtn");
+        if (uploadParseBtn) {
+          uploadParseBtn.onclick = async () => {
+            /* твой старый код */
+          };
+        }
+
+        // ---- FIX: если статус-блок закомментирован — не обновляем ----
+        async function loadStatus() {
+          const el = document.getElementById("status-info");
+          if (!el) return;
+          const resp = await fetch("/status");
+          const data = await resp.json();
+          el.innerHTML = `...`;
+        }
+        loadStatus();
+        setInterval(loadStatus, 5000);
+
+
         document.getElementById('uploadParseBtn').onclick = async () => {
           const input = document.getElementById('parseFile');
           const status = document.getElementById('parseUploadStatus');

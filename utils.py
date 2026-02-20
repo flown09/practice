@@ -230,15 +230,6 @@ def build_final_excel_from_parse_bytes(
     # 7) сохраняем финальный файл
     wb.save(output_xlsx_path)
 
-    # 8) обновляем файл в проекте (и38 таблица МИАЦ.xlsx)
-    with _I38_LOCK:
-        try:
-            wb.save(template_xlsx_path)
-        except PermissionError as e:
-            print(f"[WARN] Не удалось обновить шаблон {template_xlsx_path}: {e}")
-        except Exception as e:
-            print(f"[WARN] Ошибка при обновлении шаблона {template_xlsx_path}: {e}")
-
     return output_xlsx_path
 
 

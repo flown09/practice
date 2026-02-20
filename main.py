@@ -20,6 +20,9 @@ from pathlib import Path
 from utils import build_final_excel_from_parse_bytes
 from pathlib import Path
 from fastapi import UploadFile, File
+import io
+from openpyxl import load_workbook
+from threading import Lock
 
 
 app = FastAPI(title="MIAC Report Service")
@@ -37,6 +40,84 @@ scheduler = None  # Глобальная переменная для текущ�
 
 REPORTS_DIR = Path("reports")
 REPORTS_DIR.mkdir(exist_ok=True)
+TEMPLATE_LOCK = Lock()
+
+@app.get("/template-info")
+async def template_info():
+    path = Path(settings.excel_path)
+    if not path.exists():
+        return {"exists": False}
+
+    stat = path.stat()
+    # попробуем прочитать названия листов (не обязательно, но полезно)
+    sheetnames = None
+    try:
+        wb = load_workbook(path, read_only=True, data_only=False)
+        sheetnames = wb.sheetnames
+        wb.close()
+    except Exception:
+        sheetnames = None
+
+    return {
+        "exists": True,
+        "filename": path.name,
+        "size": stat.st_size,
+        "mtime": datetime.fromtimestamp(stat.st_mtime).strftime("%d.%m.%Y %H:%M:%S"),
+        "sheetnames": sheetnames,
+    }
+
+
+@app.get("/download-template")
+async def download_template():
+    path = Path(settings.excel_path)
+    if not path.exists():
+        raise HTTPException(404, "Шаблон не найден")
+    return FileResponse(
+        path=str(path),
+        filename=path.name,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+
+@app.post("/upload-template")
+async def upload_template(file: UploadFile = File(...)):
+    # 1) проверка расширения
+    if not file.filename.lower().endswith(".xlsx"):
+        raise HTTPException(400, "Нужен Excel файл .xlsx")
+
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(400, "Пустой файл")
+
+    # 2) валидация: файл реально открывается и содержит нужный лист
+    try:
+        wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=False)
+        sheets = wb.sheetnames
+        wb.close()
+    except Exception as e:
+        raise HTTPException(400, f"Не удалось открыть .xlsx: {e}")
+
+    required_sheet = "Лист-шаблон"   # у тебя build_final_excel_from_parse_bytes ожидает это имя
+    if required_sheet not in sheets:
+        raise HTTPException(400, f"В шаблоне нет листа '{required_sheet}'. Есть: {sheets}")
+
+    # 3) атомарная замена файла шаблона (без битых файлов при сбое)
+    dst = Path(settings.excel_path)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dst.with_suffix(dst.suffix + ".tmp")
+
+    with TEMPLATE_LOCK:
+        tmp.write_bytes(raw)
+        os.replace(str(tmp), str(dst))
+
+    stat = dst.stat()
+    return {
+        "status": "ok",
+        "filename": dst.name,
+        "size": stat.st_size,
+        "mtime": datetime.fromtimestamp(stat.st_mtime).strftime("%d.%m.%Y %H:%M:%S"),
+        "sheetnames": sheets,
+    }
 
 @app.post("/upload-parse")
 async def upload_parse(file: UploadFile = File(...)):
