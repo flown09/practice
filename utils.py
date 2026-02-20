@@ -453,6 +453,9 @@ def main_process():
     global cancelLPU
 
     LPU = pd.read_excel(settings.lpu_path)
+    LPU.columns = (LPU.columns.astype(str)
+                   .str.replace('\u00a0', ' ', regex=False)  # NBSP -> space
+                   .str.strip())
     wb_obj = load_workbook(settings.excel_path_ticket)
     ws = wb_obj["Лист 1"]
 
