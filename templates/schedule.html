@@ -1,393 +1,347 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>MIAC Автовыгрузка</title>
-    <meta charset="utf-8">
-    <style>
-        body { font-family: Arial; max-width: 800px; margin: 50px auto; padding: 20px; }
-        .card { border: 1px solid #ddd; padding: 20px; margin: 20px 0; border-radius: 8px; }
-        button { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; }
-        button:hover { background: #0056b3; }
-        .success { background: #d4edda; color: #155724; padding: 10px; border-radius: 5px; }
-        select, input { padding: 8px; margin: 5px; border: 1px solid #ddd; border-radius: 4px; }
+  <title>MIAC Автовыгрузка</title>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: Arial; max-width: 900px; margin: 50px auto; padding: 20px; }
+    .card { border: 1px solid #ddd; padding: 20px; margin: 20px 0; border-radius: 8px; }
+    button { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; }
+    button:hover { background: #0056b3; }
+    .success { background: #d4edda; color: #155724; padding: 10px; border-radius: 5px; }
+    select, input { padding: 8px; margin: 5px; border: 1px solid #ddd; border-radius: 4px; }
 
-        /* Стили для сворачиваемого блока - ИСПРАВЛЕНО */
-        .collapsible-header {
-            cursor: pointer;
-            padding: 15px;
-            background: #f8f9fa;
-            border-radius: 5px;
-            margin: -20px -20px 0 -20px; /* Убран нижний отступ (было 20px) */
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-weight: bold;
-        }
-        .collapsible-content {
-            max-height: 1000px;
-            overflow: hidden;
-            transition: max-height 0.3s ease-out, padding 0.3s ease-out; /* Добавлен переход для padding */
-            padding-top: 20px; /* Добавлен отступ сверху для контента */
-        }
-        .collapsible-content.collapsed {
-            max-height: 0;
-            padding: 0 !important; /* Полностью убираем отступы при сворачивании */
-        }
-        .toggle-icon {
-            font-size: 18px;
-            transition: transform 0.3s;
-        }
-        .toggle-icon.rotated {
-            transform: rotate(90deg);
-        }
+    /* Collapsible */
+    .collapsible-header {
+      cursor: pointer;
+      padding: 15px;
+      background: #f8f9fa;
+      border-radius: 5px;
+      margin: -20px -20px 0 -20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: bold;
+    }
+    .collapsible-content {
+      max-height: 2000px;
+      overflow: hidden;
+      transition: max-height 0.3s ease-out, padding 0.3s ease-out;
+      padding-top: 20px;
+    }
+    .collapsible-content.collapsed {
+      max-height: 0;
+      padding: 0 !important;
+    }
+    .toggle-icon {
+      font-size: 18px;
+      transition: transform 0.3s;
+    }
+    .toggle-icon.rotated {
+      transform: rotate(90deg);
+    }
 
-        /* Уменьшение отступа у заголовков в карточках */
-        .card h3 {
-            margin-top: 0; /* Минимальный верхний отступ */
-            margin-bottom: 12px;
-        }
-    </style>
+    .card h3 { margin-top: 0; margin-bottom: 12px; }
+
+    /* Settings layout */
+    .settings-grid{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      align-items:start;
+    }
+    .settings-grid .section{
+      border: 1px dashed #e3e3e3;
+      border-radius: 8px;
+      padding: 12px 12px 6px 12px;
+    }
+    .settings-grid .section h4{
+      margin: 0 0 10px 0;
+      font-size: 14px;
+      color:#333;
+    }
+    @media (max-width: 900px){
+      .settings-grid{ grid-template-columns: 1fr; }
+    }
+    .template-box input[type="file"]{
+      display:block;
+      width:100%;
+      box-sizing:border-box;
+    }
+
+    .template-actions{
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      margin-top:10px;
+    }
+
+    .template-actions button{
+      width:100%;
+    }
+
+    .template-actions a{
+      display:block; /* чтобы кнопка внутри ссылки растягивалась */
+    }
+  </style>
 </head>
+
 <body>
-    <h1>MIAC Автовыгрузка талонов</h1>
+  <h1>MIAC Автовыгрузка талонов</h1>
 
-    <!-- Блок расписания (сворачиваемый) -->
-    <div class="card">
-        <div class="collapsible-header" onclick="toggleCollapse('schedule-content')">
-            <span>Расписание</span>
-            <span class="toggle-icon" id="schedule-icon">▼</span>
-        </div>
-        <div class="collapsible-content" id="schedule-content">
-            <form id="scheduleForm">
-                <label>Включить автозапуск:</label>
-                <input type="checkbox" id="enabled" {{ 'checked' if config.enabled }}>
-
-                <br><br>
-                <label>День недели:</label>
-                <select id="day">
-                    <option value="0" {{ 'selected' if config.day_of_week == 0 }}>Понедельник</option>
-                    <option value="1" {{ 'selected' if config.day_of_week == 1 }}>Вторник</option>
-                    <option value="2" {{ 'selected' if config.day_of_week == 2 }}>Среда</option>
-                    <option value="3" {{ 'selected' if config.day_of_week == 3 }}>Четверг</option>
-                    <option value="4" {{ 'selected' if config.day_of_week == 4 }}>Пятница</option>
-                    <option value="5" {{ 'selected' if config.day_of_week == 5 }}>Суббота</option>
-                    <option value="6" {{ 'selected' if config.day_of_week == 6 }}>Воскресенье</option>
-                </select>
-
-                <br><br>
-                <label>Время:</label>
-                <input type="number" id="hour" min="0" max="23" value="{{ config.hour }}">:
-                <input type="number" id="minute" min="0" max="59" value="{{ config.minute }}" style="width:50px">
-
-                <br><br>
-                <div style="display: flex; gap: 10px;">
-                    <button type="submit" style="flex: 1;">Сохранить расписание</button>
-                    <button type="button" id="clearSchedule" style="background: #dc3545; flex: 1;">Удалить расписание</button>
-                </div>
-            </form>
-            <div id="status"></div>
-        </div>
+  <!-- НАСТРОЙКИ (Расписание + Excel-шаблон в одном блоке) -->
+  <div class="card">
+    <div class="collapsible-header" onclick="toggleCollapse('settings-content')">
+      <span>Настройки</span>
+      <!-- по умолчанию свернуто -->
+      <span class="toggle-icon rotated" id="settings-icon">▼</span>
     </div>
 
-    <!-- Блок Ручной запуск (остается прежним) -->
-<!--    <div class="card">-->
-<!--        <h3>Ручной запуск</h3>-->
-<!--        <div style="display: flex; gap: 10px; flex-wrap: wrap;">-->
-<!--            <a href="/manual"><button style="flex: 1; min-width: 200px;">Запустить выгрузку СЕЙЧАС</button></a>-->
-<!--            <a href="/download-report"><button style="flex: 1; min-width: 200px;">Скачать последний отчет</button></a>-->
-<!--        </div>-->
-<!--    </div>-->
+    <div class="collapsible-content collapsed" id="settings-content">
+      <div class="settings-grid">
 
-    <div class="card">
-      <h3>Расширение для формирования отчёта</h3>
+        <!-- Расписание -->
+        <div class="section">
+          <h4>Расписание</h4>
 
-      <ol style="margin-top: 0; line-height: 1.6;">
-        <li>Скачайте расширение архивом (.zip)</li>
-        <li>Распакуйте архив в любую папку (например, на Рабочий стол)</li>
-        <li>Откройте страницу расширений</li>
-        <li>Включите <b>Режим разработчика</b> → <b>Загрузить распакованное</b> → выберите распакованную папку</li>
-      </ol>
+          <form id="scheduleForm">
+            <label>Включить автозапуск:</label>
+            <input type="checkbox" id="enabled" {{ 'checked' if config.enabled }}>
 
-      <div style="display:flex; gap:10px; flex-wrap: wrap;">
-        <a href="/download-extension">
-          <button style="flex:1; min-width: 240px;">Скачать расширение (.zip)</button>
-        </a>
+            <br><br>
+            <label>День недели:</label>
+            <select id="day">
+              <option value="0" {{ 'selected' if config.day_of_week == 0 }}>Понедельник</option>
+              <option value="1" {{ 'selected' if config.day_of_week == 1 }}>Вторник</option>
+              <option value="2" {{ 'selected' if config.day_of_week == 2 }}>Среда</option>
+              <option value="3" {{ 'selected' if config.day_of_week == 3 }}>Четверг</option>
+              <option value="4" {{ 'selected' if config.day_of_week == 4 }}>Пятница</option>
+              <option value="5" {{ 'selected' if config.day_of_week == 5 }}>Суббота</option>
+              <option value="6" {{ 'selected' if config.day_of_week == 6 }}>Воскресенье</option>
+            </select>
 
-        <button type="button"
-                onclick="openExtensionsPage()"
-                style="background:#6f42c1; flex:1; min-width: 240px;">
-          Открыть страницу расширений
-        </button>
-      </div>
+            <br><br>
+            <label>Время:</label>
+            <input type="number" id="hour" min="0" max="23" value="{{ config.hour }}">:
+            <input type="number" id="minute" min="0" max="59" value="{{ config.minute }}" style="width:50px">
 
-      <div style="margin-top:10px; font-size: 13px; color:#555;">
-        Если кнопка “Открыть страницу расширений” не сработала — скопируйте адрес вручную:
-        <code id="extUrl" style="user-select: all;">chrome://extensions/</code>
-      </div>
-    </div>
+            <br><br>
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+              <button type="submit" style="flex:1; min-width: 220px;">Сохранить расписание</button>
+              <button type="button" id="clearSchedule" style="background:#dc3545; flex:1; min-width: 220px;">Удалить расписание</button>
+            </div>
+          </form>
 
+          <div id="status" style="margin-top:10px;"></div>
+        </div>
 
-    <!-- НОВЫЙ Блок Создание отчета -->
-    <div class="card">
-        <h3>Получение данных с дашборда</h3>
-        <div style=" padding: 1px;">
-            <a href="https://info-bi-db.egisz.rosminzdrav.ru/dashboardsViewer?sectionId=27&dashboardId=8d82093225eb470595ae4d49d2edc555&sheetId=75e7b48008b34db482c350b2333e2d45" target="_blank">
-                <button style="background: #28a745; flex: 1; min-width: 200px;">Открыть дашборд</button>
+        <!-- Шаблон Excel -->
+        <div class="section template-box">
+          <h4>Шаблон Excel</h4>
+
+          <input type="file" id="templateFile" accept=".xlsx" />
+
+          <div class="template-actions">
+            <button type="button" id="uploadTemplateBtn">
+              Загрузить новый шаблон
+            </button>
+
+            <a href="/download-template" target="_blank">
+              <button type="button" style="background:#28a745;">
+                Скачать текущий шаблон
+              </button>
             </a>
+          </div>
+
+          <div id="templateUploadStatus" style="margin-top:10px;"></div>
         </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Остальные блоки под Настройками -->
+  <div class="card">
+    <h3>Расширение для формирования отчёта</h3>
+
+    <ol style="margin-top: 0; line-height: 1.6;">
+      <li>Скачайте расширение архивом (.zip)</li>
+      <li>Распакуйте архив в любую папку (например, на Рабочий стол)</li>
+      <li>Откройте страницу расширений</li>
+      <li>Включите <b>Режим разработчика</b> → <b>Загрузить распакованное</b> → выберите распакованную папку</li>
+    </ol>
+
+    <div style="display:flex; gap:10px; flex-wrap: wrap;">
+      <a href="/download-extension">
+        <button style="flex:1; min-width: 240px;">Скачать расширение (.zip)</button>
+      </a>
+
+      <button type="button"
+              onclick="openExtensionsPage()"
+              style="background:#6f42c1; flex:1; min-width: 240px;">
+        Открыть страницу расширений
+      </button>
     </div>
 
-    <div class="card">
-      <h3>Шаблон Excel</h3>
-
-      <div style="margin-bottom:10px;">
-        <input type="file" id="templateFile" accept=".xlsx" />
-        <button type="button" id="uploadTemplateBtn" style="margin-left:10px;">
-          Загрузить новый шаблон
-        </button>
-      </div>
-
-      <div id="templateUploadStatus"></div>
-
-      <div style="margin-top:10px;">
-        <a href="/download-template" target="_blank">
-          <button type="button" style="background:#28a745;">Скачать текущий шаблон</button>
-        </a>
-      </div>
-
-      <div id="templateInfo" style="margin-top:10px; font-size:13px; color:#555;"></div>
+    <div style="margin-top:10px; font-size: 13px; color:#555;">
+      Если кнопка “Открыть страницу расширений” не сработала — скопируйте адрес вручную:
+      <code id="extUrl" style="user-select: all;">chrome://extensions/</code>
     </div>
+  </div>
 
-<!--    <div class="card">-->
-<!--      <h3>Загрузка parse.json</h3>-->
+  <div class="card">
+    <h3>Получение данных с дашборда</h3>
+    <div style="padding:1px;">
+      <a href="https://info-bi-db.egisz.rosminzdrav.ru/dashboardsViewer?sectionId=27&dashboardId=8d82093225eb470595ae4d49d2edc555&sheetId=75e7b48008b34db482c350b2333e2d45" target="_blank">
+        <button style="background: #28a745; min-width: 200px;">Открыть дашборд</button>
+      </a>
+    </div>
+  </div>
 
-<!--      <input type="file" id="parseFile" accept=".json" />-->
-<!--      <button type="button" id="uploadParseBtn" style="margin-left:10px;">-->
-<!--        Загрузить parse.json-->
-<!--      </button>-->
+  <script>
+    // --- Collapsible settings ---
+    function toggleCollapse(contentId) {
+      const content = document.getElementById(contentId);
+      const icon = document.getElementById('settings-icon');
+      if (!content || !icon) return;
 
-<!--      <div id="parseUploadStatus" style="margin-top:10px;"></div>-->
+      content.classList.toggle('collapsed');
+      icon.classList.toggle('rotated');
+    }
 
-<!--      <a id="finalDownloadLink" href="#" style="display:none; margin-top:10px;">-->
-<!--        <button type="button" style="background:#28a745;">-->
-<!--          Загрузить финальный отчет-->
-<!--        </button>-->
-<!--      </a>-->
-<!--    </div>-->
+    // --- Schedule save ---
+    const scheduleForm = document.getElementById('scheduleForm');
+    if (scheduleForm) {
+      scheduleForm.onsubmit = async (e) => {
+        e.preventDefault();
 
+        const formData = new FormData();
+        formData.append('enabled', document.getElementById('enabled')?.checked || false);
+        formData.append('day', document.getElementById('day')?.value ?? 0);
+        formData.append('hour', document.getElementById('hour')?.value ?? 10);
+        formData.append('minute', document.getElementById('minute')?.value ?? 0);
 
+        const resp = await fetch('/schedule', { method: 'POST', body: formData });
+        const data = await resp.json().catch(() => ({}));
 
+        const st = document.getElementById('status');
+        if (st) st.innerHTML = `<div class="success">${data.message || "Сохранено"}</div>`;
+      };
+    }
 
-<!--    <div class="card">-->
-<!--        <h3>Статус</h3>-->
-<!--        <div id="status-info">Загрузка...</div>-->
-<!--    </div>-->
+    // --- Clear schedule ---
+    const clearBtn = document.getElementById('clearSchedule');
+    if (clearBtn) {
+      clearBtn.onclick = async () => {
+        if (!confirm('Удалить расписание? Автозапуск будет отключен.')) return;
 
-    <script>
-        // ---- ШАБЛОН: загрузка ----
-        async function refreshTemplateInfo() {
-          const el = document.getElementById("templateInfo");
-          if (!el) return;
+        const formData = new FormData();
+        formData.append('enabled', false);
+        formData.append('day', 0);
+        formData.append('hour', 10);
+        formData.append('minute', 0);
 
-          try {
-            const r = await fetch("/template-info");
-            const info = await r.json();
-            if (!info.exists) {
-              el.textContent = "Шаблон не загружен.";
-              return;
-            }
-            el.textContent =
-              `Текущий шаблон: ${info.filename} (${info.size} байт), обновлён: ${info.mtime}` +
-              (info.sheetnames ? ` | листы: ${info.sheetnames.join(", ")}` : "");
-          } catch (e) {
-            el.textContent = "Не удалось получить информацию о шаблоне.";
-          }
+        const resp = await fetch('/schedule', { method: 'POST', body: formData });
+        const data = await resp.json().catch(() => ({}));
+
+        const st = document.getElementById('status');
+        if (st) {
+          st.innerHTML = `<div style="background:#f8d7da; color:#721c24; padding:10px; border-radius:5px;">
+            ${data.message || "Планировщик остановлен"}
+          </div>`;
         }
 
-        const uploadTemplateBtn = document.getElementById("uploadTemplateBtn");
-        if (uploadTemplateBtn) {
-          uploadTemplateBtn.onclick = async () => {
-            const input = document.getElementById("templateFile");
-            const status = document.getElementById("templateUploadStatus");
+        const enabled = document.getElementById('enabled');
+        if (enabled) enabled.checked = false;
+      };
+    }
 
-            status.innerHTML = "";
-            if (!input.files || input.files.length === 0) {
-              alert("Выберите .xlsx шаблон");
-              return;
-            }
+    // --- Template info (optional) ---
+    async function refreshTemplateInfo() {
+      const el = document.getElementById("templateInfo");
+      if (!el) return;
 
-            const fd = new FormData();
-            fd.append("file", input.files[0]);
+      try {
+        const r = await fetch("/template-info");
+        const info = await r.json();
+        if (!info.exists) {
+          el.textContent = "Шаблон не загружен.";
+          return;
+        }
+        el.textContent =
+          `Текущий шаблон: ${info.filename} (${info.size} байт), обновлён: ${info.mtime}` +
+          (info.sheetnames ? ` | листы: ${info.sheetnames.join(", ")}` : "");
+      } catch (e) {
+        el.textContent = "Не удалось получить информацию о шаблоне.";
+      }
+    }
 
-            status.innerHTML = "Загрузка шаблона...";
-            const resp = await fetch("/upload-template", { method: "POST", body: fd });
-            const data = await resp.json().catch(() => ({}));
+    // --- Template upload ---
+    const uploadTemplateBtn = document.getElementById("uploadTemplateBtn");
+    if (uploadTemplateBtn) {
+      uploadTemplateBtn.onclick = async () => {
+        const input = document.getElementById("templateFile");
+        const status = document.getElementById("templateUploadStatus");
 
-            if (!resp.ok) {
-              status.innerHTML = `<div style="background:#f8d7da;color:#721c24;padding:10px;border-radius:5px;">
-                Ошибка: ${data.detail || "не удалось загрузить шаблон"}
-              </div>`;
-              return;
-            }
-
-            status.innerHTML = `<div class="success">Шаблон обновлён: ${data.filename}</div>`;
-            await refreshTemplateInfo();
-          };
+        if (status) status.innerHTML = "";
+        if (!input || !input.files || input.files.length === 0) {
+          alert("Выберите .xlsx шаблон");
+          return;
         }
 
-        refreshTemplateInfo();
+        const fd = new FormData();
+        fd.append("file", input.files[0]);
 
+        if (status) status.innerHTML = "Загрузка шаблона...";
+        const resp = await fetch("/upload-template", { method: "POST", body: fd });
+        const data = await resp.json().catch(() => ({}));
 
-        // ---- FIX: если блок parse.json закомментирован — не вешаем обработчик ----
-        const uploadParseBtn = document.getElementById("uploadParseBtn");
-        if (uploadParseBtn) {
-          uploadParseBtn.onclick = async () => {
-            /* твой старый код */
-          };
+        if (!resp.ok) {
+          if (status) status.innerHTML = `<div style="background:#f8d7da;color:#721c24;padding:10px;border-radius:5px;">
+            Ошибка: ${data.detail || "не удалось загрузить шаблон"}
+          </div>`;
+          return;
         }
 
-        // ---- FIX: если статус-блок закомментирован — не обновляем ----
-        async function loadStatus() {
-          const el = document.getElementById("status-info");
-          if (!el) return;
-          const resp = await fetch("/status");
-          const data = await resp.json();
-          el.innerHTML = `...`;
-        }
-        loadStatus();
-        setInterval(loadStatus, 5000);
+        if (status) status.innerHTML = `<div class="success">Шаблон обновлён: ${data.filename || "ok"}</div>`;
+        await refreshTemplateInfo();
+      };
+    }
 
+    // если templateInfo раскомментирован — будет обновляться
+    refreshTemplateInfo();
 
-        document.getElementById('uploadParseBtn').onclick = async () => {
-          const input = document.getElementById('parseFile');
-          const status = document.getElementById('parseUploadStatus');
-          const link = document.getElementById('finalDownloadLink');
+    // --- Extensions helper ---
+    function detectExtensionsUrl() {
+      const ua = navigator.userAgent;
+      if (ua.includes("Edg/")) return "edge://extensions/";
+      if (ua.includes("OPR/") || ua.includes("Opera")) return "opera://extensions/";
+      if (ua.includes("Chrome/") || ua.includes("Chromium/") || ua.includes("YaBrowser/")) return "chrome://extensions/";
+      if (ua.includes("Firefox/")) return "about:addons";
+      return "chrome://extensions/";
+    }
 
-          link.style.display = 'none';
-          status.innerHTML = '';
+    function openExtensionsPage() {
+      const url = detectExtensionsUrl();
 
-          if (!input.files || input.files.length === 0) {
-            alert('Выберите parse.json (из Загрузок)');
-            return;
-          }
+      const el = document.getElementById("extUrl");
+      if (el) el.textContent = url;
 
-          const fd = new FormData();
-          fd.append('file', input.files[0]);
+      try { window.open(url, "_blank"); } catch (e) {}
 
-          status.innerHTML = 'Загрузка и обработка...';
+      const msg =
+        "Откройте страницу расширений: " + url + "\n\n" +
+        "Далее:\n" +
+        "1) Включите «Режим разработчика»\n" +
+        "2) «Загрузить распакованное»\n" +
+        "3) Выберите папку, куда вы распаковали Dashbord-extension.zip";
 
-          const resp = await fetch('/upload-parse', { method: 'POST', body: fd });
-          const data = await resp.json();
-
-          if (!resp.ok) {
-            status.innerHTML = `<div style="background:#f8d7da;color:#721c24;padding:10px;border-radius:5px;">
-              Ошибка: ${data.detail || 'не удалось обработать файл'}
-            </div>`;
-            return;
-          }
-
-          status.innerHTML = `<div class="success">Готово! Можно скачать финальный отчет.</div>`;
-          link.href = data.download_url;
-          link.style.display = 'inline-block';
-        };
-        // Функция сворачивания/разворачивания
-        function toggleCollapse(contentId) {
-            const content = document.getElementById(contentId);
-            const icon = document.getElementById('schedule-icon'); // Исправлен ID иконки
-
-            content.classList.toggle('collapsed');
-            icon.classList.toggle('rotated');
-        }
-
-        // Сохранение расписания
-        document.getElementById('scheduleForm').onsubmit = async (e) => {
-            e.preventDefault();
-            const formData = new FormData();
-            formData.append('enabled', document.getElementById('enabled').checked);
-            formData.append('day', document.getElementById('day').value);
-            formData.append('hour', document.getElementById('hour').value);
-            formData.append('minute', document.getElementById('minute').value);
-
-            const resp = await fetch('/schedule', {method: 'POST', body: formData});
-            const data = await resp.json();
-            document.getElementById('status').innerHTML = `<div class="success">${data.message}</div>`;
-        }
-
-        // Загрузка статуса
-        async function loadStatus() {
-            const resp = await fetch('/status');
-            const data = await resp.json();
-            document.getElementById('status-info').innerHTML = `
-                Автозапуск: ${data.enabled ? 'Включен' : 'Выключен'}<br>
-                Планировщик: ${data.scheduler_running ? 'Работает' : 'Остановлен'}<br>
-                Следующий запуск: ${data.next_run}<br>
-                Задач в очереди: ${data.jobs_count}<br>
-                Файл отчета: ${data.file_size} байт, ${data.file_date}
-            `;
-        }
-        loadStatus();
-        setInterval(loadStatus, 5000);
-
-        document.getElementById('clearSchedule').onclick = async () => {
-            if (!confirm('Удалить расписание? Автозапуск будет отключен.')) return;
-
-            const formData = new FormData();
-            formData.append('enabled', false);
-            formData.append('day', 0);
-            formData.append('hour', 10);
-            formData.append('minute', 0);
-
-            const resp = await fetch('/schedule', {method: 'POST', body: formData});
-            const data = await resp.json();
-            document.getElementById('status').innerHTML = `<div style="background: #f8d7da; color: #721c24; padding: 10px; border-radius: 5px;">${data.message}</div>`;
-
-            // Обновляем форму
-            document.getElementById('enabled').checked = false;
-        }
-
-        function detectExtensionsUrl() {
-            const ua = navigator.userAgent;
-
-            // Edge
-            if (ua.includes("Edg/")) return "edge://extensions/";
-            // Opera
-            if (ua.includes("OPR/") || ua.includes("Opera")) return "opera://extensions/";
-            // Chrome / Chromium / Yandex (как правило тоже chrome://extensions/)
-            if (ua.includes("Chrome/") || ua.includes("Chromium/") || ua.includes("YaBrowser/")) return "chrome://extensions/";
-            // Firefox (на всякий случай)
-            if (ua.includes("Firefox/")) return "about:addons";
-
-            return "chrome://extensions/";
-          }
-
-            function openExtensionsPage() {
-            const url = detectExtensionsUrl();
-
-            // Покажем правильный URL в подсказке на странице
-            const el = document.getElementById("extUrl");
-            if (el) el.textContent = url;
-
-            // Пытаемся открыть. Во многих браузерах переход на chrome://... из обычной страницы блокируется — это нормально.
-            let opened = false;
-            try {
-              const w = window.open(url, "_blank");
-              opened = !!w;
-            } catch (e) {}
-
-            // Фолбэк: копируем ссылку + объясняем, что делать дальше
-            const msg =
-              "Откройте страницу расширений: " + url + "\n\n" +
-              "Далее:\n" +
-              "1) Включите «Режим разработчика»\n" +
-              "2) «Загрузить распакованное»\n" +
-              "3) Выберите папку, куда вы распаковали Dashbord-extension.zip";
-
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-              navigator.clipboard.writeText(url).finally(() => alert(msg + "\n\n(Адрес скопирован в буфер обмена)"));
-            } else {
-              alert(msg);
-            }
-            }
-    </script>
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).finally(() => alert(msg + "\n\n(Адрес скопирован в буфер обмена)"));
+      } else {
+        alert(msg);
+      }
+    }
+  </script>
 </body>
 </html>
