@@ -1,4 +1,4 @@
-const APP_UPLOAD_URL = "http://127.0.0.1:8000/upload-parse";
+const APP_UPLOAD_URL = "http://172.20.220.254:8000/upload-parse";
 
 console.log("[dash-ext] background alive");
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
