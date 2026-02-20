@@ -74,10 +74,8 @@ async function getReq(o, dStart, dStop) {
 async function startJob() {
   console.log("[dash-ext] startJob called (TEST)");
 
-  writeFile(
-    "autostart-test.json",
-    JSON.stringify({ ok: true, time: new Date().toISOString() })
-  );
+  const fake = JSON.stringify({ ok: true, time: new Date().toISOString(), note: "fake parse upload test" });
+  uploadParse(fake);
   return;
 
   if (__started) return;
@@ -180,6 +178,17 @@ function checkLoad(container) {
 function replaceAll(string, search, replace) {
   return string.split(search).join(replace);
 }
+
+window.addEventListener("message", (event) => {
+  const d = event.data;
+  if (!d || d.__from !== "dashbord-ext") return;
+
+  if (d.type === "UPLOAD_RESULT") {
+    console.log("[dash-ext] UPLOAD_RESULT:", d.payload);
+    if (d.payload?.ok) alert("UPLOAD OK: " + JSON.stringify(d.payload));
+    else alert("UPLOAD FAIL: " + JSON.stringify(d.payload));
+  }
+});
 
 let __started = false;
 

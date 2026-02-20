@@ -17,7 +17,9 @@ import uuid
 from fastapi import UploadFile, File
 from fastapi.concurrency import run_in_threadpool
 from pathlib import Path
-from utils import build_final_excel_from_parse_bytes  # если положил туда
+from utils import build_final_excel_from_parse_bytes
+from pathlib import Path
+from fastapi import UploadFile, File
 
 
 app = FastAPI(title="MIAC Report Service")
@@ -69,6 +71,15 @@ async def upload_parse(file: UploadFile = File(...)):
 @app.post("/upload-parse-raw")
 async def upload_parse_raw(file: UploadFile = File(...)):
     raw = await file.read()
+
+    REPORTS_DIR = Path("reports")
+    REPORTS_DIR.mkdir(exist_ok=True)
+
+    save_path = REPORTS_DIR / "last_parse.json"
+    save_path.write_bytes(raw)
+
+    print(f"[upload-parse-raw] got {len(raw)} bytes -> {save_path}")
+
     return {"status": "ok", "bytes": len(raw), "filename": file.filename}
 
 
