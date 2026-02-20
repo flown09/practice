@@ -162,6 +162,11 @@ def build_final_excel_from_parse_bytes(
     ws["C1"] = week_sheet
     ws.sheet_state = "visible"
 
+    keep_ws = ws
+    for sh in wb.worksheets[:]:  # копия списка, чтобы безопасно удалять
+        if sh is not keep_ws:
+            wb.remove(sh)
+
     # перемещаем в начало, чтобы точно было видно
     try:
         wb._sheets.remove(ws)
