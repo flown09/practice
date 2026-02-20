@@ -1,4 +1,4 @@
-const APP_UPLOAD_URL = "http://127.0.0.1:8000/upload-parse-raw";
+const APP_UPLOAD_URL = "http://127.0.0.1:8000/upload-parse";
 
 console.log("[dash-ext] background alive");
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -19,6 +19,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
 
       const finalUrl = data.download_url ? new URL(data.download_url, APP_UPLOAD_URL).toString() : null;
+      sendResponse({ ok: true, upload_id: data.upload_id, download_url: finalUrl });
+
 
       // опционально: сразу скачать финальный отчет
       if (finalUrl) {
