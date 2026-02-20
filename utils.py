@@ -456,6 +456,10 @@ def main_process():
     LPU.columns = (LPU.columns.astype(str)
                    .str.replace('\u00a0', ' ', regex=False)  # NBSP -> space
                    .str.strip())
+    if "РМИС ID" not in LPU.columns:
+        for alt in ("Код МО", "RMIS ID", "Код", "CODE"):
+            if alt in LPU.columns: LPU = LPU.rename(columns={alt: "РМИС ID"})
+            break
     wb_obj = load_workbook(settings.excel_path_ticket)
     ws = wb_obj["Лист 1"]
 
