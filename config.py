@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     password: str = "Q123456q"
     report_id: str = "7465547992"
     employer: str = "11421130428"
-    excel_path: str = "и38 таблица МИАЦ.xlsx"
+    excel_path: str = "sample.xlsx"
     excel_path_ticket: str = "miac_table.xlsx"
     lpu_path: str = "LPU.xlsx"
 

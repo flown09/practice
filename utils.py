@@ -68,7 +68,7 @@ def build_final_excel_from_parse_bytes(
     lpu_path: str,
     template_xlsx_path: str,
     output_xlsx_path: str,
-    sheet_name: str = "Образец Новый",
+    sheet_name: str = "Лист-шаблон",
 ):
     # 1) читаем parse.json (как у коллеги)
     df = pd.read_json(io.BytesIO(parse_bytes))
