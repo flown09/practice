@@ -172,7 +172,7 @@ async def download_final(upload_id: str):
 
     return FileResponse(
         path=str(path),
-        filename="финальный_отчет.xlsx",
+        filename="Отчет.xlsx",
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 

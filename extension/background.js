@@ -24,7 +24,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       // опционально: сразу скачать финальный отчет
       if (finalUrl) {
-        chrome.downloads.download({ url: finalUrl, filename: "финальный_отчет.xlsx", saveAs: false }, () => {});
+        chrome.downloads.download({ url: finalUrl, filename: "Отчет.xlsx", saveAs: false }, () => {});
       }
 
       sendResponse({ ok: true, upload_id: data.upload_id, download_url: finalUrl });
