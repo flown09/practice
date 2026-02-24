@@ -15,8 +15,7 @@
 
 - API для загрузки шаблона `.xlsx` и проверки его состояния.
 - API для загрузки `parse.json` и генерации итогового файла `final_<id>.xlsx`.
-- Хранение последнего загруженного `parse.json` и его просмотр/скачивание.
-- Ручной и плановый запуск фоновой выгрузки талонов через APScheduler.
+- Плановый запуск фоновой выгрузки талонов через APScheduler.
 - Скачивание готового отчёта и ZIP-архива browser extension из папки `extension/`.
 
 ## 3. Структура проекта
@@ -43,22 +42,20 @@
 ### 4.1 Поток A: загрузка parse.json → финальный Excel
 
 1. Клиент отправляет `POST /upload-parse` с файлом JSON.
-2. JSON сохраняется как `reports/last_parse.json`.
-3. В threadpool вызывается `build_final_excel_from_parse_bytes(...)`.
-4. Обработчик:
+2. В threadpool вызывается `build_final_excel_from_parse_bytes(...)`.
+3. Обработчик:
    - читает метрики из JSON;
    - сопоставляет МО через `LPU2.xlsx` (и fallback через `LPU.xlsx` + RMIS ID);
    - подтягивает талоны Q/R/S из `miac_table.xlsx`;
    - копирует лист `Лист-шаблон` в новый лист с именем прошлой ISO-недели;
    - заполняет колонки D/F/I/K/M/O, Q/R/S и формулы C/E/G/H/J/L/N/P/T;
    - сохраняет итог в `reports/final_<upload_id>.xlsx`.
-5. Клиент скачивает файл по `GET /download-final/{upload_id}`.
+4. Клиент скачивает файл по `GET /download-final/{upload_id}`.
 
 ### 4.2 Поток B: выгрузка талонов
 
-1. Ручной запуск: `GET /manual` или `POST /start-report`.
-2. Плановый запуск: настройка через `POST /schedule`.
-3. Вызывается `main_process()`:
+1. Плановый запуск: настройка через `POST /schedule`.
+2. Вызывается `main_process()`:
    - читает `LPU.xlsx`;
    - авторизуется во внешней системе;
    - по каждой МО получает статистику талонов;
@@ -66,7 +63,7 @@
 
 ## 5. Требования
 
-- Python 3.10+ (рекомендуется 3.11/3.12).
+- Python 3.10+.
 - Доступ к внешнему хосту, указанному в `base_url` (для выгрузки талонов).
 - Входные Excel/JSON-файлы в ожидаемом формате.
 
@@ -87,11 +84,6 @@ pip install -r requirements.txt
 ```bash
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
-
-После запуска:
-
-- UI: `http://localhost:8000/`
-- Swagger: `http://localhost:8000/docs`
 
 ## 7. Конфигурация
 
@@ -158,12 +150,6 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 - `GET /download-template` — скачать текущий шаблон.
 - `POST /upload-template` — загрузить/заменить шаблон.
 
-Пример:
-
-```bash
-curl -F "file=@sample.xlsx" http://localhost:8000/upload-template
-```
-
 ### 9.2 Parse JSON и итоговый отчёт
 
 - `POST /upload-parse` — загрузка `parse.json` + генерация `final_<id>.xlsx`.
@@ -172,11 +158,6 @@ curl -F "file=@sample.xlsx" http://localhost:8000/upload-template
 - `GET /download-last-parse` — скачать последний JSON.
 - `GET /view-last-parse` — посмотреть JSON в браузере.
 
-Пример:
-
-```bash
-curl -F "file=@parse.json" http://localhost:8000/upload-parse
-```
 
 ### 9.3 Планировщик и запуск
 
