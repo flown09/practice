@@ -23,6 +23,8 @@ from fastapi import UploadFile, File
 import io
 from openpyxl import load_workbook
 from threading import Lock
+from fastapi.responses import PlainTextResponse
+import json
 
 
 app = FastAPI(title="MIAC Report Service")
@@ -40,6 +42,7 @@ scheduler = None  # Глобальная переменная для текущ�
 
 REPORTS_DIR = Path("reports")
 REPORTS_DIR.mkdir(exist_ok=True)
+LAST_PARSE_PATH = REPORTS_DIR / "last_parse.json"
 TEMPLATE_LOCK = Lock()
 
 @app.get("/template-info")
@@ -119,12 +122,50 @@ async def upload_template(file: UploadFile = File(...)):
         "sheetnames": sheets,
     }
 
+@app.get("/download-last-parse")
+async def download_last_parse():
+    path = REPORTS_DIR / "last_parse.json"
+    if not path.exists():
+        raise HTTPException(404, "last_parse.json не найден. Сначала загрузите parse.json")
+    return FileResponse(
+        path=str(path),
+        filename="parse.json",
+        media_type="application/json"
+    )
+
+@app.get("/view-last-parse", response_class=HTMLResponse)
+async def view_last_parse():
+    path = REPORTS_DIR / "last_parse.json"
+    if not path.exists():
+        raise HTTPException(404, "last_parse.json не найден. Сначала загрузите parse.json")
+
+    raw = path.read_text(encoding="utf-8", errors="replace")
+    # красиво отформатируем, если это валидный JSON
+    try:
+        obj = json.loads(raw)
+        pretty = json.dumps(obj, ensure_ascii=False, indent=2)
+    except Exception:
+        pretty = raw
+
+    return f"""
+    <html><head><meta charset="utf-8"><title>last_parse.json</title></head>
+    <body style="font-family:Arial; margin:20px;">
+      <h2>last_parse.json</h2>
+      <p>
+        <a href="/download-last-parse">Скачать parse.json</a>
+      </p>
+      <pre style="white-space:pre-wrap; background:#f6f8fa; padding:12px; border-radius:8px;">{pretty}</pre>
+    </body></html>
+    """
+
 @app.post("/upload-parse")
 async def upload_parse(file: UploadFile = File(...)):
     if not file.filename.lower().endswith(".json"):
         raise HTTPException(400, "Нужен JSON файл (parse.json)")
 
     parse_bytes = await file.read()
+    # сохраняем последний parse.json, чтобы можно было скачать/посмотреть
+    LAST_PARSE_PATH.write_bytes(parse_bytes)
     upload_id = uuid.uuid4().hex
 
     # куда сохраняем финальный файл
@@ -152,9 +193,6 @@ async def upload_parse(file: UploadFile = File(...)):
 @app.post("/upload-parse-raw")
 async def upload_parse_raw(file: UploadFile = File(...)):
     raw = await file.read()
-
-    REPORTS_DIR = Path("reports")
-    REPORTS_DIR.mkdir(exist_ok=True)
 
     save_path = REPORTS_DIR / "last_parse.json"
     save_path.write_bytes(raw)
