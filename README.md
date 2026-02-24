@@ -22,12 +22,48 @@
    - загрузить/скачать Excel-шаблон,
    - скачать архив расширения.
 
-## 2. Ключевые возможности
+## 2. Архитектура и поток данных
 
-- API для загрузки шаблона `.xlsx` и проверки его состояния.
-- API для загрузки `parse.json` и генерации итогового файла `final_<id>.xlsx`.
-- Плановый запуск фоновой выгрузки талонов через APScheduler.
-- Скачивание готового отчёта и ZIP-архива browser extension из папки `extension/`.
+### 2.1 Компоненты
+
+- FastAPI приложение (main.py)
+  - UI: / (страница schedule.html)
+  - API: расписание, загрузка шаблона, генерация финального Excel, скачивания файлов
+  - Планировщик: APScheduler (фоновые задания)
+- Модуль настроек (config.py)
+  - параметры подключения к MIAC (URL, логин, пароль и пр.)
+  - пути к файлам: шаблон, таблица MIAC, справочник LPU
+- Сбор данных из MIAC (utils.py → main_process(), process_lpu())
+  - авторизация, выбор LPU, получение FormCache, запрос XML, запись в miac_table.xlsx
+- Сборка финального Excel из parse.json (utils.py → build_final_excel_from_parse_bytes())
+  - заполнение шаблона
+  - формулы/проценты/итоги
+  - добавление колонок Q/R/S из miac_table.xlsx
+- Chrome-расширение (extension/)
+  - sd.js — выполняется в контексте страницы, собирает данные с дашборда
+  - script-loader.js — контент-скрипт, инжектит sd.js, мостит сообщения в background
+  - background.js — отправляет parse.json на FastAPI /upload-parse и (опционально) скачивает итоговый Excel
+  - manifest.json — MV3 конфигурация
+- Celery задачи (tasks.py)
+  - заготовка для фонового запуска main_process() через Celery
+  - в текущем коде не используется FastAPI приложением
+
+### 2.2 Поток данных (схема)
+
+1. Пользователь открывает дашборд (сайт ЕГИСЗ), расширение автоматически запускается.
+2. sd.js:
+   - ждёт токен (sessionStorage oidc.user:/idsrv:DashboardsApp)
+   - считывает выбранный диапазон дат из iframe
+   - получает список организаций (ORG)
+   - по каждой ORG выполняет пачку запросов по метрикам (черновики/ошибки/успешные/и т.п.)
+   - формирует массив resultAll и отправляет на страницу сообщение UPLOAD_PARSE
+3. script-loader.js ловит UPLOAD_PARSE, пересылает в background.js
+4. background.js POST-ит файл parse.json на http://<server>:8000/upload-parse
+5. FastAPI /upload-parse:
+   - вызывает build_final_excel_from_parse_bytes(...)
+   - сохраняет reports/final_<uuid>.xlsx
+   - возвращает ссылку /download-final/<uuid>
+6. background.js при желании сразу скачивает файл (через chrome.downloads).
 
 ## 3. Структура проекта
 
@@ -48,152 +84,229 @@
 └── sample.xlsx             # Excel-шаблон (с листом "Лист-шаблон")
 ```
 
-## 4. Архитектура и поток данных
+## 4. Требования и зависимости
 
-### 4.1 Поток A: загрузка parse.json → финальный Excel
+### 4.1 Python
 
-1. Клиент отправляет `POST /upload-parse` с файлом JSON.
-2. В threadpool вызывается `build_final_excel_from_parse_bytes(...)`.
-3. Обработчик:
-   - читает метрики из JSON;
-   - сопоставляет МО через `LPU2.xlsx` (и fallback через `LPU.xlsx` + RMIS ID);
-   - подтягивает талоны Q/R/S из `miac_table.xlsx`;
-   - копирует лист `Лист-шаблон` в новый лист с именем прошлой ISO-недели;
-   - заполняет колонки D/F/I/K/M/O, Q/R/S и формулы C/E/G/H/J/L/N/P/T;
-   - сохраняет итог в `reports/final_<upload_id>.xlsx`.
-4. Клиент скачивает файл по `GET /download-final/{upload_id}`.
+Рекомендуется Python 3.10+.
 
-### 4.2 Поток B: выгрузка талонов
+### 4.2 Библиотеки
 
-1. Плановый запуск: настройка через `POST /schedule`.
-2. Вызывается `main_process()`:
-   - читает `LPU.xlsx`;
-   - авторизуется во внешней системе;
-   - по каждой МО получает статистику талонов;
-   - сохраняет агрегаты в `miac_table.xlsx` (лист `Лист 1`).
+Минимально нужны:
+- fastapi, uvicorn
+- jinja2
+- apscheduler
+- pydantic-settings
+- requests
+- pandas
+- openpyxl
+- isoweek
 
-## 5. Требования
+## 5. Конфигурация (config.py)
 
-- Python 3.10+.
-- Доступ к внешнему хосту, указанному в `base_url` (для выгрузки талонов).
-- Входные Excel/JSON-файлы в ожидаемом формате.
+Settings(BaseSettings) поддерживает конфигурацию через переменные окружения.
 
-## 6. Установка и запуск
+Параметры:
+- base_url — URL MIAC/D3 (пример: http://.../demo/)
+- login, password — учётка для MIAC
+- report_id, employer — параметры отчётной формы MIAC
+- excel_path — путь к Excel-шаблону (по коду это ещё и “главный файл” для скачивания в /download-report)
+- excel_path_ticket — путь к miac_table.xlsx (таблица талонов Q/R/S)
+- lpu_path — путь к LPU.xlsx
 
-### 6.1 Установка зависимостей
+Рекомендация: вынести секреты в .env и не хранить в Git.
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
+## 6. FastAPI сервис (main.py)
 
-> Примечание: `requirements.txt` сохранён в UTF-16 LE. Если установщик не читает файл корректно, перекодируйте его в UTF-8.
+### 6.1 Веб-интерфейс
 
-### 6.2 Запуск сервера
+GET /
+Отдаёт страницу schedule.html (Jinja2), где можно:
+- включить автозапуск (APScheduler)
+- выбрать день недели и время
+- загрузить Excel-шаблон
+- скачать текущий шаблон
+- скачать расширение
+- открыть дашборд
 
-```bash
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-```
+### 6.2 API эндпоинты (полный список)
 
-## 7. Конфигурация
+**Шаблон Excel**
 
-Настройки задаются в `config.py` через `BaseSettings` (могут переопределяться переменными окружения).
+GET /template-info
 
-Основные параметры:
+Возвращает информацию о текущем шаблоне (settings.excel_path):
+- существует ли файл
+- имя/размер/время изменения
+- названия листов (пытается открыть openpyxl)
 
-- `base_url` — базовый URL внешней системы.
-- `login` / `password` — учётные данные.
-- `report_id` / `employer` — параметры отчётного запроса.
-- `excel_path` — путь к Excel-шаблону (`sample.xlsx`).
-- `excel_path_ticket` — путь к промежуточной таблице талонов (`miac_table.xlsx`).
-- `lpu_path` — путь к `LPU.xlsx`.
-- `lpu2_path` — путь к `LPU2.xlsx`.
+GET /download-template
 
-## 8. Форматы входных файлов
+Скачивает текущий шаблон .xlsx.
 
-### 8.1 Шаблон Excel (`sample.xlsx`)
+POST /upload-template
 
-Обязателен лист **`Лист-шаблон`**. При загрузке через `/upload-template` сервис проверяет:
+Загружает новый Excel-шаблон:
+- проверяет расширение .xlsx
+- проверяет, что файл реально открывается
+- проверяет, что есть лист "Лист-шаблон" (важно для сборки отчёта)
+- сохраняет атомарно (через временный файл) под settings.excel_path
+- защищено TEMPLATE_LOCK от гонок
 
-- расширение `.xlsx`;
-- что файл не пустой;
-- что лист `Лист-шаблон` присутствует.
+Генерация финального отчёта из parse.json
+POST /upload-parse
 
-### 8.2 `parse.json`
+Принимает файл parse.json (обязателен Content-Type: multipart/form-data):
+- создаёт upload_id
+- строит reports/final_<upload_id>.xlsx
+- возвращает ссылку на скачивание
 
-Сервис ожидает структуру, где:
+GET /status
 
-- в первой колонке — название МО;
-- в колонках 1..6 — массивы вида `[..., [число]]`.
+Возвращает:
+- включено ли расписание
+- запущен ли scheduler
+- строка следующего запуска (условная)
+- число jobs
+- размер/дата файла settings.excel_path
+- даты прошлой недели (get_last_week_dates())
 
-Метрики раскладываются так:
+GET /download-extension
 
-- col1 → `chern` (D)
-- col2 → `osh_all` (I)
-- col3 → `org_osh` (K)
-- col4 → `teh_osh` (M)
-- col5 → `usp` (F)
-- col6 → `fed` (O)
+Архивирует папку extension/ в zip и отдаёт как Dashbord-extension.zip.
 
-### 8.3 `LPU.xlsx` и `LPU2.xlsx`
+GET /last-week-dates
 
-Поддерживаются вариации имён колонок, например:
+Возвращает даты прошлой недели (для отладки).
 
-- название МО: `Наменование МО`, `Наименование МО`, `МО`, `name`, `NAME`;
-- код МО: `РМИС ID`, `Код МО`, `RMIS ID`, `Код`, `CODE`.
+GET /docs
 
-### 8.4 `miac_table.xlsx`
+Возвращает JSON-подсказку (не редирект), где swagger.
 
-Ожидается лист **`Лист 1`** и структура:
+## 7. Логика MIAC выгрузки (utils.py)
 
-- A: название МО
-- B: РМИС ID
-- C: `PORTAL_ALL`
-- D: `TOTAL`
-- E: `TOTAL_ALL`
+### 7.1 main_process()
 
-## 9. API (подробно)
+Назначение: обновить файл miac_table.xlsx (колонки Q/R/S в финальном отчёте).
 
-### 9.1 Шаблон
+Шаги:
 
-- `GET /template-info` — метаданные текущего шаблона.
-- `GET /download-template` — скачать текущий шаблон.
-- `POST /upload-template` — загрузить/заменить шаблон.
+1. Загружает LPU.xlsx в DataFrame.
+2. Нормализует названия колонок (удаляет NBSP, strip).
+3. Пытается обеспечить наличие колонки "РМИС ID" (переименованием альтернатив: "Код МО", "RMIS ID", "Код", "CODE").
+4. Открывает miac_table.xlsx → лист "Лист 1".
+5. Если cancelLPU не пустой — повторяет обработку неудачных МО.
+6. Запускает process_lpu(LPU, ...) — основная обработка.
+7. Сохраняет miac_table.xlsx, возвращает длительность.
 
-### 9.2 Parse JSON и итоговый отчёт
+### 7.2 process_lpu(lpu_df, ws, wb, cancel_lpu=None)
 
-- `POST /upload-parse` — загрузка `parse.json` + генерация `final_<id>.xlsx`.
-- `POST /upload-parse-raw` — просто сохранить сырой JSON как `reports/last_parse.json`.
-- `GET /download-final/{upload_id}` — скачать результат сборки.
+На каждую МО:
 
+1. Получает SYS_CACHE_UID из GET {BASE_URL}/d3/~d3api (regex по JS).
+2. Авторизуется POST-ом в request.php (System/login), получает Bearer token (если есть), кладёт в headers.
+3. Выбирает LPU (System/lpu) с параметрами LPU/EMPLOYER.
+4. Получает FormCache заголовок у getform.php (Reports/run).
+5. Запрашивает getmultidata.php → получает XML, чистит обёртку <DataSet...>, парсит pandas.read_xml.
+6. Ищет строку в листе "Лист 1", где B{k} == РМИС ID, записывает суммы:
+   - C = PORTAL_ALL.sum()
+   - D = TOTAL.sum()
+   - E = TOTAL_ALL.sum()
+   - F = текущая дата/время
+7. При ошибке добавляет МО в cancelLPU.
 
-### 9.3 Планировщик и запуск
+При ошибке добавляет МО в cancelLPU.
 
-- `POST /schedule` (form-data):
-  - `enabled` (`true/false`)
-  - `day` (0..6, где 0 = понедельник)
-  - `hour` (0..23)
-  - `minute` (0..59)
-- `GET /status` — текущее состояние scheduler + состояние файлов.
-- `POST /start-report` — ручной запуск в фоне (API).
+## 8. Генерация финального отчёта (build_final_excel_from_parse_bytes)
 
-### 9.4 Прочие endpoint’ы
+### 8.1 Входные данные
 
-- `GET /download-report` — скачать файл по `settings.excel_path`.
-- `GET /download-extension` — скачать ZIP содержимого `extension/`.
-- `GET /last-week-dates` — даты прошлой недели.
-- `GET /docs` — возвращает ссылку на Swagger UI.
+Функция принимает:
+- parse_bytes — содержимое parse.json
+- lpu_path — путь к LPU.xlsx
+- template_xlsx_path — путь к шаблону (должен содержать лист "Лист-шаблон")
+- output_xlsx_path — куда сохранить результат
+- sheet_name — имя листа-шаблона (по умолчанию "Лист-шаблон")
 
-## 10. Эксплуатационные рекомендации
+Дополнительно читает settings.excel_path_ticket (обычно miac_table.xlsx) для Q/R/S.
 
-- Вынесите секреты (`login`, `password`) в переменные окружения.
+### 8.2 Формат parse.json (как ожидает ваш код)
 
-## 11. Быстрый сценарий использования
+Вы строите resultAll как массив, где каждая запись:
 
-1. Запустите сервис.
-2. Проверьте шаблон: `GET /template-info`.
-3. При необходимости загрузите новый шаблон: `POST /upload-template`.
-4. Запустите выгрузку талонов.
-5. Скачайте результат по `download_url` из ответа.
+[
+  "Название МО",
+  ["ПОПЫТОК ...", [число]],
+  ["НЕУДАЧНЫХ ...", [число]],
+  ["Орг. ...", [число]],
+  ["Тех. ...", [число]],
+  ["УСПЕШНЫХ ...", [число]],
+  ["ошибки федерального уровня", [число]]
+]
 
+Внутри build_final_excel_from_parse_bytes это читается через pandas.read_json, затем доступ идёт по индексам df.at[row, col], ожидается структура “список из 2 элементов”, где второй элемент — список со значением.
+
+## 9. Веб-страница schedule.html
+
+1. Настройки (collapsible)
+   - Расписание (enabled/day/hour/minute)
+   - Excel-шаблон:
+     - загрузка /upload-template
+     - скачивание /download-template
+2. Расширение
+   - скачать zip: /download-extension
+   - открыть страницу расширений (Chrome/Edge/Opera/Firefox) — через helper JS
+3. Открыть дашборд
+   - ссылка на дашборд ЕГИСЗ
+
+JS-логика:
+- POST /schedule — сохранить расписание
+- кнопка удаления расписания — отправляет “disabled + дефолтные значения”
+- POST /upload-template — загрузка шаблона
+- GET /template-info — обновление инфо (в коде элемент templateInfo сейчас не добавлен в HTML, но функция готова)
+
+## 10. Chrome-расширение (extension/)
+
+### 10.1 Как работает
+- manifest.json (MV3):
+  - content script script-loader.js запускается на https://info-bi-db.egisz.rosminzdrav.ru/*
+  - делает web_accessible_resources для sd.js
+  - background service worker: background.js
+  - права: activeTab, downloads
+  - host_permissions для вашего FastAPI сервера
+- script-loader.js:
+  - инжектит sd.js в контекст страницы
+  - слушает window.postMessage и пересылает сообщения в background
+- sd.js:
+  - ждёт готовность: токен + iframe + поле дат
+  - получает список ORG
+  - для каждого ORG делает серию fetch в https://info-bi-db.egisz.rosminzdrav.ru/corelogic/api/query
+  - собирает resultAll
+  - window.postMessage({type:"UPLOAD_PARSE", text: JSON.stringify(resultAll)})
+- background.js:
+  - принимает UPLOAD_PARSE
+  - отправляет parse.json на FastAPI /upload-parse
+  - получает ссылку /download-final/<id>
+  - (опционально) скачивает итоговый Excel
+
+### 10.2 Важная настройка: адрес сервера
+
+В background.js:
+
+const APP_UPLOAD_URL = "http://172.20.220.254:8000/upload-parse";
+
+## 11. Инструкция по установке и запуску
+
+### 11.1 Запуск сервиса
+
+uvicorn main:app --host 0.0.0.0 --port 8000
+
+### 11.2 Установка расширения
+
+1. В UI нажмите “Скачать расширение (.zip)”
+2. Распакуйте архив
+3. Откройте страницу расширений:
+   - Chrome/Яндекс: chrome://extensions/
+   - Edge: edge://extensions/
+4. Включите “Режим разработчика”
+5. “Загрузить распакованное” → выберите папку расширения
