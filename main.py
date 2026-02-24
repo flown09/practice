@@ -135,7 +135,7 @@ async def upload_parse(file: UploadFile = File(...)):
         await run_in_threadpool(
             build_final_excel_from_parse_bytes,
             parse_bytes,
-            settings.lpu_path,        # lpu.xlsx на сервере
+            settings.lpu2_path,        # lpu.xlsx на сервере
             settings.excel_path,      # шаблон xlsx на сервере (положи сюда "и38 таблица МИАЦ.xlsx" или сделай отдельный setting)
             str(out_path),
             "Лист-шаблон"

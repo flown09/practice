@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     employer: str = "11421130428"
     excel_path: str = "sample.xlsx"
     excel_path_ticket: str = "miac_table.xlsx"
-    lpu_path: str = "LPU.xlsx"
+    lpu_path: str = "LPU.xlsx"  # для выгрузки в miac_table.xlsx
+    lpu2_path: str = "LPU2.xlsx"  # для финального отчета (D/F/I/K/M/O)
 
 settings = Settings()
